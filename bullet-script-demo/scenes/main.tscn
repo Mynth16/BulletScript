@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bhwlbtnrbh5gw"]
+
+[ext_resource type="Script" uid="uid://dyssiifyaq71p" path="res://BulletScriptRunner.cs" id="1_o5qli"]
+
+[node name="Main" type="Node2D" unique_id=1313284647]
+script = ExtResource("1_o5qli")

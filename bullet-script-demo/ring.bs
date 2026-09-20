@@ -1,0 +1,27 @@
+VAR ring_count = 12;
+VAR ring_speed = 3.5;
+VAR burst_gap = 0.5s;
+
+BULLET small_orb {
+	speed: ring_speed;
+	size: 8;
+	sprite: "orb_small";
+	lifetime: 6s;
+}
+
+SPAWN_POINT center {
+	x: 50;
+	y: 0;
+}
+
+SPAWN_PATTERN basic_ring {
+	LOOP i IN 0 TO 3 {
+		PHASE burst AFTER burst_gap {
+			SPAWN small_orb AT center {
+				angle: 0;
+				count: ring_count;
+				spread: 360;
+			};
+		}
+	}
+}

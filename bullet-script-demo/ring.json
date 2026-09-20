@@ -1,0 +1,312 @@
+{
+  "bullets": [
+	{
+	  "id": 0,
+	  "name": "small_orb",
+	  "speed": 3.5,
+	  "size": 4,
+	  "sprite": "orb_small",
+	  "lifetimeMs": 6000
+	}
+  ],
+  "spawnPoints": [
+	{
+	  "id": 0,
+	  "name": "center",
+	  "x": 0,
+	  "y": 0
+	}
+  ],
+  "patterns": {
+	"basic_ring": [
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 0,
+		"delayMs": 500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 30,
+		"delayMs": 500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 60,
+		"delayMs": 500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 90,
+		"delayMs": 500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 120,
+		"delayMs": 500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 150,
+		"delayMs": 500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 180,
+		"delayMs": 500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 210,
+		"delayMs": 500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 240,
+		"delayMs": 500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 270,
+		"delayMs": 500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 300,
+		"delayMs": 500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 330,
+		"delayMs": 500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 0,
+		"delayMs": 1000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 30,
+		"delayMs": 1000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 60,
+		"delayMs": 1000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 90,
+		"delayMs": 1000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 120,
+		"delayMs": 1000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 150,
+		"delayMs": 1000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 180,
+		"delayMs": 1000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 210,
+		"delayMs": 1000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 240,
+		"delayMs": 1000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 270,
+		"delayMs": 1000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 300,
+		"delayMs": 1000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 330,
+		"delayMs": 1000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 0,
+		"delayMs": 1500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 30,
+		"delayMs": 1500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 60,
+		"delayMs": 1500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 90,
+		"delayMs": 1500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 120,
+		"delayMs": 1500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 150,
+		"delayMs": 1500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 180,
+		"delayMs": 1500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 210,
+		"delayMs": 1500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 240,
+		"delayMs": 1500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 270,
+		"delayMs": 1500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 300,
+		"delayMs": 1500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 330,
+		"delayMs": 1500
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 0,
+		"delayMs": 2000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 30,
+		"delayMs": 2000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 60,
+		"delayMs": 2000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 90,
+		"delayMs": 2000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 120,
+		"delayMs": 2000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 150,
+		"delayMs": 2000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 180,
+		"delayMs": 2000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 210,
+		"delayMs": 2000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 240,
+		"delayMs": 2000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 270,
+		"delayMs": 2000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 300,
+		"delayMs": 2000
+	  },
+	  {
+		"bulletId": 0,
+		"spawnPointId": 0,
+		"angleDegrees": 330,
+		"delayMs": 2000
+	  }
+	]
+  }
+}
