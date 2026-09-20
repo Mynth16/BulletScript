@@ -1,0 +1,73 @@
+VAR base_speed = 10;
+VAR gap = 1.5s;
+
+BULLET orb      { speed: base_speed;       size: 8; lifetime: 4s; sprite: "orb_small"; }
+BULLET fast_orb { speed: base_speed * 1.5; size: 6; lifetime: 3s; sprite: "orb_small"; }
+
+SPAWN_POINT center { x: 0; y: 0; }
+SPAWN_POINT left   { x: -50; y: 0; }
+
+
+VAR fan_n = 5;
+VAR fan_spread = 60deg;
+
+SPAWN_PATTERN fan {
+	SPAWN orb AT left {
+		angle: 90deg - fan_spread * (fan_n - 1) / (2 * fan_n);
+		count: fan_n;
+		spread: fan_spread;
+	};
+}
+
+
+SPAWN_PATTERN spiral {
+	LOOP i IN 0 TO 23 {
+		SPAWN orb AT center { angle: i * 15deg; delay: i * 50ms; };
+	}
+}
+
+
+SPAWN_PATTERN pinwheel {
+	LOOP wave IN 0 TO 9 {
+		LOOP arm IN 0 TO 3 {
+			SPAWN fast_orb AT center {
+				angle: wave * 10deg + arm * 90deg;
+				delay: wave * 0.1s;
+			};
+		}
+	}
+}
+
+
+SPAWN_PATTERN pulses {
+	LOOP n IN 0 TO 4 {
+		SPAWN orb AT center {
+			count: 16;
+			spread: 360deg;
+			angle: (n % 2) * 11.25deg;
+			delay: n * 800ms;
+		};
+	}
+}
+
+
+SPAWN_PATTERN growing {
+	LOOP i IN 1 TO 5 {
+		SPAWN orb AT center { count: i * 6; spread: 360deg; delay: i * 200ms; };
+	}
+}
+
+
+SPAWN_PATTERN boss {
+	PHASE opening {                       // clock = 0
+		SPAWN orb AT left { angle: 60deg; count: 5; spread: 60deg; };
+	}
+	PHASE ring_burst AFTER gap {          // clock = 1500 ms
+		SPAWN orb AT center { count: 24; spread: 360deg; };
+	}
+	PHASE finale AFTER gap * 2 {          // clock = 1500 + 3000 = 4500 ms, not 3000
+		LOOP i IN 0 TO 7 {
+			SPAWN fast_orb AT center { angle: i * 45deg; delay: i * 100ms; };  // 4500..5200 ms
+		}
+	}
+}

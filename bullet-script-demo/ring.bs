@@ -1,4 +1,4 @@
-VAR ring_count = 12;
+VAR ring_count = 18;
 VAR ring_speed = 3.5;
 VAR burst_gap = 0.5s;
 

@@ -4,3 +4,6 @@
 
 [node name="Main" type="Node2D" unique_id=1313284647]
 script = ExtResource("1_o5qli")
+SourcePath = "res://patterns/example.bs"
+PatternName = "pinwheel"
+AutoStart = false

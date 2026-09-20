@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("BulletScript.Compiler")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+af5685d68ab6de7f045b743e403800037fbf4640")]
 [assembly: System.Reflection.AssemblyProductAttribute("BulletScript.Compiler")]
 [assembly: System.Reflection.AssemblyTitleAttribute("BulletScript.Compiler")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

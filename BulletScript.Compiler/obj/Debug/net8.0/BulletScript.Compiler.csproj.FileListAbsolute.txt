@@ -20,3 +20,4 @@ C:\Users\catim\Documents\Code\BulletScript\BulletScript.Compiler\obj\Debug\net8.
 C:\Users\catim\Documents\Code\BulletScript\BulletScript.Compiler\obj\Debug\net8.0\refint\BulletScript.Compiler.dll
 C:\Users\catim\Documents\Code\BulletScript\BulletScript.Compiler\obj\Debug\net8.0\BulletScript.Compiler.pdb
 C:\Users\catim\Documents\Code\BulletScript\BulletScript.Compiler\obj\Debug\net8.0\ref\BulletScript.Compiler.dll
+C:\Users\catim\Documents\Code\BulletScript\BulletScript.Compiler\obj\Debug\net8.0\BulletScript.Compiler.sourcelink.json
