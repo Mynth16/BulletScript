@@ -1,0 +1,30 @@
+BULLET orb { 
+	speed: 3;
+	size: 8;
+	lifetime: 4s;
+	sprite: "orb_small";
+}
+
+SPAWN_POINT center { x: 0; y: 0; }
+
+SPAWN_PATTERN pinwheel {
+	LOOP i IN 0 TO 3 {
+		LOOP wave IN 0 TO 18 {
+			LOOP arm IN 0 TO 3 {
+				SPAWN orb AT center {
+					angle: wave * 10deg + arm * 90deg;
+					delay: (i * 36 + wave) * 0.05s;
+				};
+			}
+		}
+
+		LOOP wave IN 1 TO 17 {
+			LOOP arm IN 0 TO 3 {
+				SPAWN orb AT center {
+					angle: (18 - wave) * 10deg + arm * 90deg;
+					delay: (i * 36 + 18 + wave) * 0.05s;
+				};
+			}
+		}
+	}
+}

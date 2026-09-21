@@ -1,0 +1,43 @@
+VAR base_speed = 3;
+VAR fan_n = 5;
+VAR fan_spread = 60deg;
+VAR volley_gap = 1s;
+
+BULLET orb { speed: base_speed; size: 8; lifetime: 1.8s; sprite: "orb_small"; }
+
+SPAWN_POINT top_left     { x: -300; y: -300; }
+SPAWN_POINT bottom_left  { x: -300; y:  300; }
+SPAWN_POINT top_right    { x:  300; y: -300; }
+SPAWN_POINT bottom_right { x:  300; y:  300; }
+
+SPAWN_PATTERN fan {
+	LOOP i IN 0 TO 4 {
+		SPAWN orb AT top_left {
+			angle: 45deg - fan_spread * (fan_n - 1) / (2 * fan_n);
+			count: fan_n;
+			spread: fan_spread;
+			delay: i * volley_gap;
+		};
+
+		SPAWN orb AT bottom_left {
+			angle: -45deg - fan_spread * (fan_n - 1) / (2 * fan_n);
+			count: fan_n;
+			spread: fan_spread;
+			delay: i * volley_gap;
+		};
+
+		SPAWN orb AT top_right {
+			angle: 135deg - fan_spread * (fan_n - 1) / (2 * fan_n);
+			count: fan_n;
+			spread: fan_spread;
+			delay: i * volley_gap;
+		};
+
+		SPAWN orb AT bottom_right {
+			angle: -135deg - fan_spread * (fan_n - 1) / (2 * fan_n);
+			count: fan_n;
+			spread: fan_spread;
+			delay: i * volley_gap;
+		};
+	}
+}

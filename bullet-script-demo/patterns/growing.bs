@@ -1,0 +1,18 @@
+BULLET orb { 
+	speed: 2;
+	size: 8;
+	lifetime: 4s;
+	sprite: "orb_small";
+}
+
+SPAWN_POINT center { x: 0; y: 0; }
+
+SPAWN_PATTERN sun {
+	LOOP i IN 1 TO 5 {
+		SPAWN orb AT center { 
+			count: i * 6;
+			spread: 360deg;
+			delay: i * 200ms;
+		};
+	}
+}

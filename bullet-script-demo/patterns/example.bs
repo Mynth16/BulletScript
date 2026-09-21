@@ -1,5 +1,5 @@
-VAR base_speed = 10;
-VAR gap = 1.5s;
+VAR base_speed = 2;
+VAR gap = 0.5s;
 
 BULLET orb      { speed: base_speed;       size: 8; lifetime: 4s; sprite: "orb_small"; }
 BULLET fast_orb { speed: base_speed * 1.5; size: 6; lifetime: 3s; sprite: "orb_small"; }
@@ -21,16 +21,16 @@ SPAWN_PATTERN fan {
 
 
 SPAWN_PATTERN spiral {
-	LOOP i IN 0 TO 23 {
-		SPAWN orb AT center { angle: i * 15deg; delay: i * 50ms; };
+	LOOP i IN 0 TO 47 {
+		SPAWN orb AT center { angle: i * 7.5deg; delay: i * 50ms; };
 	}
 }
 
 
 SPAWN_PATTERN pinwheel {
-	LOOP wave IN 0 TO 9 {
+	LOOP wave IN 0 TO 18 {
 		LOOP arm IN 0 TO 3 {
-			SPAWN fast_orb AT center {
+			SPAWN orb AT center {
 				angle: wave * 10deg + arm * 90deg;
 				delay: wave * 0.1s;
 			};
