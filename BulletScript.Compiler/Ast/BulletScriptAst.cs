@@ -73,6 +73,23 @@ namespace BulletScript.Compiler.Ast
         public ConstExpr Index { get; init; } = null!;
     }
 
+    // rand(lo, hi) -- a float in [lo, hi); randi(lo, hi) -- a whole number in [lo, hi],
+    // both ends included. Drawn from a seeded RNG during compilation, so a given
+    // .bs file always compiles to the same output (see SEED).
+    public class RandExpr : ConstExpr
+    {
+        public bool Integer { get; init; }
+        public ConstExpr Lo { get; init; } = null!;
+        public ConstExpr Hi { get; init; } = null!;
+    }
+
+    // ---------- SEED ----------
+
+    public class SeedDeclNode : TopLevelDecl
+    {
+        public long Value { get; init; }
+    }
+
     // ---------- VAR ----------
 
     public class VarDeclNode : TopLevelDecl
@@ -110,6 +127,9 @@ namespace BulletScript.Compiler.Ast
     public class SpawnPatternDefNode : TopLevelDecl
     {
         public string Name { get; init; } = "";
+        // Compile-time parameters: `SPAWN_PATTERN ring(n, spd) { ... }`. A pattern with
+        // parameters is a template (only reachable through CALL), not an entry point.
+        public List<string> Params { get; init; } = new();
         public List<PatternStmt> Body { get; init; } = new();
     }
 
@@ -132,17 +152,36 @@ namespace BulletScript.Compiler.Ast
         public ConstExpr? Count { get; init; }
         public ConstExpr? Spread { get; init; }
         public ConstExpr? Delay { get; init; }
-        // Evaluated once per copy (count), with `index` bound to 0..count-1.
+        // The fields below are evaluated once per copy (count), with `index` bound to
+        // 0..count-1. Speed falls back to the BULLET's speed when absent.
         public ConstExpr? Color { get; init; }
+        public ConstExpr? Speed { get; init; }
+        // Speed change per second, in speed units.
+        public ConstExpr? Accel { get; init; }
+        // Speed that Accel stops at. Without it, deceleration stops at 0.
+        public ConstExpr? SpeedLimit { get; init; }
+        // Turn rate: angle per second (degrees when written as a plain number).
+        public ConstExpr? Turn { get; init; }
     }
 
     public class LoopStmt : PatternStmt
     {
         public string LoopVar { get; init; } = "";
-        public int From { get; init; }
-        public int To { get; init; }
-        public int Step { get; init; } = 1;
+        // Bounds are compile-time expressions (whole numbers), so VARs and
+        // pattern parameters can drive them: `LOOP i IN 0 TO n - 1`.
+        public ConstExpr From { get; init; } = null!;
+        public ConstExpr To { get; init; } = null!;
+        public ConstExpr? Step { get; init; }
         public List<PatternStmt> Body { get; init; } = new();
+    }
+
+    // CALL ring(12, 2); -- expands another pattern's body right here, with its
+    // parameters bound to the evaluated arguments. The called pattern must be
+    // declared earlier in the file.
+    public class CallStmt : PatternStmt
+    {
+        public string PatternName { get; init; } = "";
+        public List<ConstExpr> Args { get; init; } = new();
     }
 
     public class PhaseStmt : PatternStmt

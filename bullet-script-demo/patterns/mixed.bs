@@ -1,0 +1,24 @@
+SEED 1234;
+SPAWN_POINT center { x: 0; y: 0; }
+
+BULLET fat_bullet_pink  { speed: 1.5;   size: 12; lifetime: 5s; sprite: "fat_bullet_pink"; }
+BULLET curvy_yellow { speed: 3.5; size: 6;  lifetime: 5s; sprite: "curvy_yellow"; }
+BULLET green {speed: 1; size: 4; lifetime: 3s; sprite: "small_bullet_green";}
+
+SPAWN_PATTERN mixed {
+	LOOP i IN 1 TO 5 {
+		SPAWN [fat_bullet_pink, curvy_yellow][i % 5 != 1] AT center {
+			count: [12, 18][i % 5 != 1];
+			spread: 360deg;
+			delay: [0s, (0.1s * i) + 1.7s][i % 5 != 1];
+		};
+	}
+	
+	LOOP i IN 0 TO 39 {
+		SPAWN green AT center {
+			angle: rand(0deg, 360deg);
+			speed: rand(1.0, 1.5);
+			delay: (i * 0.02s) + 0.3s;
+		};
+	}
+}

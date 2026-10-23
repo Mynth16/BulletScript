@@ -1,0 +1,18 @@
+SEED 1234;
+SPAWN_POINT center { x: 0; y: 0; }
+
+BULLET orb  { speed: 2;   size: 8;  lifetime: 4s; sprite: "orb_small"; }
+
+SPAWN_PATTERN confetti {
+	LOOP i IN 1 TO 6  {
+		SPAWN orb AT center {
+			count: 30;
+			spread: 360deg;
+			angle: rand(0deg, 360deg);
+			color: [#FF3030, #FFD040, #30A0FF, #FFFFFF][randi(0, 3)];
+			delay: 0.05s * i;
+			speed: i;
+			turn: [90deg, -90deg][i % 2];
+		};
+	}
+}

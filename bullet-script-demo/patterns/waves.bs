@@ -1,0 +1,57 @@
+// Crossing waves: two emitters in the top corners, each firing five rows of dots
+// that snake down and cross in the middle (red/pink on one side, blue on the other).
+//
+// How it works: every `beat`, each emitter fires one volley of 5 bullets (one per row).
+// The whole volley's heading swings back and forth, so the bullets already in flight
+// form a wave. The left fan is mirrored on the right, so the two waves cross.
+//
+// Run it with PatternName = crossing_waves.
+
+VAR steps = 28;              // volleys per emitter (2 full waves at period 14)
+VAR period = 14;             // volleys per full wave
+VAR beat = 400ms;            // time between volleys, i.e. the gap between dots in a row
+VAR sway = 22deg;            // how far the wave swings the heading
+VAR deg_per_step = 360 / period;
+
+BULLET orb { speed: 3; size: 7; lifetime: 8s; sprite: "orb_small"; }
+
+SPAWN_POINT left  { x: -520; y: -260; }
+SPAWN_POINT right { x:  520; y: -260; }
+
+// One volley. `w` is the wave position from -1 to 1, `t` is when to fire it.
+// Row colors run red -> pink -> white -> light blue -> blue, the same on both sides.
+SPAWN_PATTERN volley(w, t) {
+	SPAWN orb AT left {
+		angle: 25deg + w * sway;
+		count: 5;
+		spread: 50deg;
+		delay: t;
+		turn: 15deg;
+		color: [#FF3050, #FF7090, #FFFFFF, #90A0FF, #3060FF][index];
+	};
+
+	// Mirror image of the left fan, so the two waves cross in the middle.
+	SPAWN orb AT right {
+		angle: 115deg - w * sway;
+		count: 5;
+		spread: 50deg;
+		delay: t;
+		turn: -15deg;
+		color: [#FF3050, #FF7090, #FFFFFF, #90A0FF, #3060FF][index];
+	};
+}
+
+// There is no sin() in the language, so the wave is a parabola: it goes 0 -> 1 -> 0 over
+// the first half of the cycle and mirrors to 0 -> -1 -> 0 over the second half.
+// `phase` is the position in the cycle, in degrees (0 to 360).
+SPAWN_PATTERN wave_step(phase, t) {
+	CALL volley(
+		(1 - 2 * ((phase % 360) >= 180)) * ((phase % 180) * (180 - phase % 180)) / 8100,
+		t);
+}
+
+SPAWN_PATTERN crossing_waves {
+	LOOP k IN 0 TO steps - 1 {
+		CALL wave_step(k * deg_per_step, k * beat);
+	}
+}

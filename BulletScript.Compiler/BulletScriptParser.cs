@@ -46,6 +46,14 @@ namespace BulletScript.Compiler
         private const string CopyIndexName = "index";
         private bool _copyIndexInScope;
 
+        // Pattern name -> parameter count. A name is added only AFTER its body is
+        // parsed, so a pattern can't CALL itself, and CALL can only reach patterns
+        // declared earlier in the file (same no-forward-references rule as VAR/BULLET).
+        private readonly Dictionary<string, int> _declaredPatterns = new();
+
+        private bool _seedDeclared;
+        private bool _randUsed;
+
         public Parser(List<Token> tokens)
         {
             _tokens = tokens;
@@ -94,8 +102,9 @@ namespace BulletScript.Compiler
                 TokenType.KwBullet => ParseBulletDef(),
                 TokenType.KwSpawnPoint => ParseSpawnPointDef(),
                 TokenType.KwSpawnPattern => ParseSpawnPatternDef(),
+                TokenType.KwSeed => ParseSeedDecl(),
                 _ => throw new ParseError(
-                        $"Expected a top-level declaration (VAR, BULLET, SPAWN_POINT, SPAWN_PATTERN), found {Current.Type}",
+                        $"Expected a top-level declaration (SEED, VAR, BULLET, SPAWN_POINT, SPAWN_PATTERN), found {Current.Type}",
                         Current.Line, Current.Column)
             };
         }
@@ -109,8 +118,7 @@ namespace BulletScript.Compiler
 
             if (_declaredVars.Contains(nameTok.Lexeme))
                 throw new ParseError($"VAR '{nameTok.Lexeme}' is already declared", nameTok.Line, nameTok.Column);
-            if (nameTok.Lexeme == CopyIndexName)
-                throw new ParseError($"'{CopyIndexName}' is reserved (it is the per-copy counter inside SPAWN color)", nameTok.Line, nameTok.Column);
+            RejectReservedName(nameTok, "VAR");
 
             Expect(TokenType.Equals, "after VAR name");
             var value = ParseConstExpr();
@@ -245,6 +253,10 @@ namespace BulletScript.Compiler
                     return new NumberLiteral { Value = tok.NumericValue, Unit = tok.Unit, Line = tok.Line, Column = tok.Column };
 
                 case TokenType.Identifier:
+                    // rand(...) / randi(...) are built-in functions, recognised by the '(' after them.
+                    if ((tok.Lexeme == "rand" || tok.Lexeme == "randi") && _tokens[_pos + 1].Type == TokenType.LParen)
+                        return ParseRandCall();
+
                     Advance();
                     bool isCopyIndex = _copyIndexInScope && tok.Lexeme == CopyIndexName;
                     if (!isCopyIndex && !_declaredVars.Contains(tok.Lexeme) && !_activeLoopVars.Contains(tok.Lexeme))
@@ -269,6 +281,73 @@ namespace BulletScript.Compiler
                         $"Expected a number, VAR reference, or '(' in expression, found {tok.Type}",
                         tok.Line, tok.Column);
             }
+        }
+
+        // rand_call ::= ('rand' | 'randi') '(' const_expr ',' const_expr ')'
+
+        private RandExpr ParseRandCall()
+        {
+            var nameTok = Advance();
+            Expect(TokenType.LParen, $"after {nameTok.Lexeme}");
+            var lo = ParseConstExpr();
+            Expect(TokenType.Comma, $"between the two arguments of {nameTok.Lexeme}()");
+            var hi = ParseConstExpr();
+            Expect(TokenType.RParen, $"to close {nameTok.Lexeme}()");
+
+            _randUsed = true;
+            return new RandExpr
+            {
+                Integer = nameTok.Lexeme == "randi",
+                Lo = lo,
+                Hi = hi,
+                Line = nameTok.Line,
+                Column = nameTok.Column
+            };
+        }
+
+        // Parses an expression in which `index` (the copy number 0..count-1 inside a
+        // SPAWN) is visible: SPAWN color, speed, accel, speed_limit, turn, and the
+        // bullet list index.
+        private ConstExpr ParsePerCopyExpr()
+        {
+            _copyIndexInScope = true;
+            try { return ParseConstExpr(); }
+            finally { _copyIndexInScope = false; }
+        }
+
+        // `index`, `rand` and `randi` have fixed meanings, so no VAR, LOOP variable or
+        // pattern parameter may take those names.
+        private static void RejectReservedName(Token nameTok, string what)
+        {
+            if (nameTok.Lexeme == CopyIndexName)
+                throw new ParseError(
+                    $"'{CopyIndexName}' is reserved (it is the per-copy counter inside SPAWN) and can't be used as a {what} name",
+                    nameTok.Line, nameTok.Column);
+            if (nameTok.Lexeme == "rand" || nameTok.Lexeme == "randi")
+                throw new ParseError(
+                    $"'{nameTok.Lexeme}' is a built-in function and can't be used as a {what} name",
+                    nameTok.Line, nameTok.Column);
+        }
+
+        // ---------- SEED ----------
+        // seed_decl ::= 'SEED' [ '-' ] INTEGER ';'
+
+        private SeedDeclNode ParseSeedDecl()
+        {
+            var kw = Expect(TokenType.KwSeed, "to start a SEED declaration");
+
+            if (_seedDeclared)
+                throw new ParseError("SEED is already declared", kw.Line, kw.Column);
+            if (_randUsed)
+                throw new ParseError("SEED must come before the first use of rand() or randi()", kw.Line, kw.Column);
+
+            bool negative = Match(TokenType.Minus);
+            var valueTok = Expect(TokenType.IntegerLiteral, "as the SEED value (a whole number)");
+            Expect(TokenType.Semicolon, "to end SEED declaration");
+
+            _seedDeclared = true;
+            long value = (long)valueTok.NumericValue;
+            return new SeedDeclNode { Value = negative ? -value : value, Line = kw.Line, Column = kw.Column };
         }
 
         // ---------- BULLET ----------
@@ -382,11 +461,52 @@ namespace BulletScript.Compiler
             var kw = Expect(TokenType.KwSpawnPattern, "to start a SPAWN_PATTERN definition");
             var nameTok = Expect(TokenType.Identifier, "as SPAWN_PATTERN name");
 
+            if (_declaredPatterns.ContainsKey(nameTok.Lexeme))
+                throw new ParseError($"SPAWN_PATTERN '{nameTok.Lexeme}' is already declared", nameTok.Line, nameTok.Column);
+
+            // Optional compile-time parameters: SPAWN_PATTERN ring(n, spd) { ... }
+            var parameters = new List<string>();
+            if (Match(TokenType.LParen))
+            {
+                if (!Check(TokenType.RParen))
+                {
+                    do
+                    {
+                        var paramTok = Expect(TokenType.Identifier, "as a parameter name");
+                        RejectReservedName(paramTok, "parameter");
+                        if (_declaredVars.Contains(paramTok.Lexeme))
+                            throw new ParseError(
+                                $"Parameter '{paramTok.Lexeme}' collides with an existing VAR of the same name",
+                                paramTok.Line, paramTok.Column);
+                        if (parameters.Contains(paramTok.Lexeme))
+                            throw new ParseError($"Parameter '{paramTok.Lexeme}' is listed twice", paramTok.Line, paramTok.Column);
+                        parameters.Add(paramTok.Lexeme);
+                    } while (Match(TokenType.Comma));
+                }
+                Expect(TokenType.RParen, "to close the parameter list");
+            }
+
             Expect(TokenType.LBrace, "to open SPAWN_PATTERN body");
-            var body = ParsePatternStmtList();
+
+            // Parameters are in scope for the whole body, exactly like LOOP variables.
+            // Patterns only appear at top level, so _activeLoopVars is empty here and the
+            // caller's LOOP variables can never leak into a pattern body.
+            _activeLoopVars.AddRange(parameters);
+            List<PatternStmt> body;
+            try
+            {
+                body = ParsePatternStmtList();
+            }
+            finally
+            {
+                _activeLoopVars.RemoveRange(_activeLoopVars.Count - parameters.Count, parameters.Count);
+            }
             Expect(TokenType.RBrace, "to close SPAWN_PATTERN body");
 
-            return new SpawnPatternDefNode { Name = nameTok.Lexeme, Body = body, Line = kw.Line, Column = kw.Column };
+            // Registered only now, so the pattern can't CALL itself.
+            _declaredPatterns[nameTok.Lexeme] = parameters.Count;
+
+            return new SpawnPatternDefNode { Name = nameTok.Lexeme, Params = parameters, Body = body, Line = kw.Line, Column = kw.Column };
         }
 
         private List<PatternStmt> ParsePatternStmtList()
@@ -406,10 +526,43 @@ namespace BulletScript.Compiler
                 TokenType.KwSpawn => ParseSpawnStmt(),
                 TokenType.KwLoop => ParseLoopStmt(),
                 TokenType.KwPhase => ParsePhaseStmt(),
+                TokenType.KwCall => ParseCallStmt(),
                 _ => throw new ParseError(
-                        $"Expected SPAWN, LOOP, or PHASE inside SPAWN_PATTERN, found {Current.Type}",
+                        $"Expected SPAWN, LOOP, PHASE, or CALL inside SPAWN_PATTERN, found {Current.Type}",
                         Current.Line, Current.Column)
             };
+        }
+
+        // call_stmt ::= 'CALL' IDENTIFIER '(' [ const_expr { ',' const_expr } ] ')' ';'
+
+        private CallStmt ParseCallStmt()
+        {
+            var kw = Expect(TokenType.KwCall, "to start a CALL statement");
+            var nameTok = Expect(TokenType.Identifier, "as the pattern name after CALL");
+
+            if (!_declaredPatterns.TryGetValue(nameTok.Lexeme, out int arity))
+                throw new ParseError(
+                    $"CALL of undeclared SPAWN_PATTERN '{nameTok.Lexeme}' (a pattern must be declared earlier in the file)",
+                    nameTok.Line, nameTok.Column);
+
+            Expect(TokenType.LParen, "after the pattern name in CALL");
+            var args = new List<ConstExpr>();
+            if (!Check(TokenType.RParen))
+            {
+                do
+                {
+                    args.Add(ParseConstExpr());
+                } while (Match(TokenType.Comma));
+            }
+            Expect(TokenType.RParen, "to close the CALL argument list");
+            Expect(TokenType.Semicolon, "after CALL statement");
+
+            if (args.Count != arity)
+                throw new ParseError(
+                    $"Pattern '{nameTok.Lexeme}' takes {arity} argument(s), got {args.Count}",
+                    nameTok.Line, nameTok.Column);
+
+            return new CallStmt { PatternName = nameTok.Lexeme, Args = args, Line = kw.Line, Column = kw.Column };
         }
 
         // spawn_stmt   ::= 'SPAWN' bullet_ref 'AT' IDENTIFIER '{' { spawn_prop } '}' ';'
@@ -439,9 +592,7 @@ namespace BulletScript.Compiler
                 Expect(TokenType.RBracket, "to close the bullet list");
                 Expect(TokenType.LBracket, "to index the bullet list, e.g. SPAWN [a, b][index % 2] AT ...");
 
-                _copyIndexInScope = true;
-                try { bulletIndex = ParseConstExpr(); }
-                finally { _copyIndexInScope = false; }
+                bulletIndex = ParsePerCopyExpr();
 
                 Expect(TokenType.RBracket, "to close the bullet list index");
             }
@@ -462,11 +613,13 @@ namespace BulletScript.Compiler
 
             Expect(TokenType.LBrace, "to open SPAWN body");
 
-            ConstExpr? angle = null, count = null, spread = null, delay = null, color = null;
+            ConstExpr? angle = null, count = null, spread = null, delay = null;
+            ConstExpr? color = null, speed = null, accel = null, speedLimit = null, turn = null;
 
             while (!Check(TokenType.RBrace))
             {
-                var propTok = Expect(TokenType.Identifier, "as a SPAWN property (angle/count/spread/delay)");
+                var propTok = Expect(TokenType.Identifier,
+                    "as a SPAWN property (angle/count/spread/delay/color/speed/accel/speed_limit/turn)");
                 Expect(TokenType.Colon, "after SPAWN property name");
 
                 switch (propTok.Lexeme)
@@ -475,12 +628,13 @@ namespace BulletScript.Compiler
                     case "count": count = ParseConstExpr(); break;
                     case "spread": spread = ParseConstExpr(); break;
                     case "delay": delay = ParseConstExpr(); break;
-                    case "color":
-                        // `index` (0..count-1) is only visible inside this expression.
-                        _copyIndexInScope = true;
-                        try { color = ParseConstExpr(); }
-                        finally { _copyIndexInScope = false; }
-                        break;
+                    // These are evaluated once per bullet, so `index` (0..count-1) is
+                    // visible inside them.
+                    case "color": color = ParsePerCopyExpr(); break;
+                    case "speed": speed = ParsePerCopyExpr(); break;
+                    case "accel": accel = ParsePerCopyExpr(); break;
+                    case "speed_limit": speedLimit = ParsePerCopyExpr(); break;
+                    case "turn": turn = ParsePerCopyExpr(); break;
                     default:
                         throw new ParseError($"Unknown SPAWN property '{propTok.Lexeme}'", propTok.Line, propTok.Column);
                 }
@@ -502,48 +656,42 @@ namespace BulletScript.Compiler
                 Spread = spread,
                 Delay = delay,
                 Color = color,
+                Speed = speed,
+                Accel = accel,
+                SpeedLimit = speedLimit,
+                Turn = turn,
                 Line = kw.Line,
                 Column = kw.Column
             };
         }
 
-        // loop_stmt ::= 'LOOP' IDENTIFIER 'IN' INTEGER 'TO' INTEGER [ 'STEP' INTEGER ] '{' { pattern_stmt } '}'
+        // loop_stmt ::= 'LOOP' IDENTIFIER 'IN' const_expr 'TO' const_expr [ 'STEP' const_expr ] '{' { pattern_stmt } '}'
+        // The bounds must evaluate to whole numbers at compile time; they are checked
+        // (including "would never execute" and STEP 0) by the compiler, not here, because
+        // they may depend on VARs and pattern parameters.
 
         private LoopStmt ParseLoopStmt()
         {
             var kw = Expect(TokenType.KwLoop, "to start a LOOP");
             var loopVarTok = Expect(TokenType.Identifier, "as LOOP variable name");
 
+            // The bounds are parsed BEFORE the loop variable is added to scope, so a
+            // bound can't refer to the variable it is defining.
             Expect(TokenType.KwIn, "after LOOP variable name");
-            var fromTok = Expect(TokenType.IntegerLiteral, "as LOOP start bound (must be an integer literal)");
+            var from = ParseConstExpr();
             Expect(TokenType.KwTo, "after LOOP start bound");
-            var toTok = Expect(TokenType.IntegerLiteral, "as LOOP end bound (must be an integer literal)");
+            var to = ParseConstExpr();
 
-            int step = 1;
+            ConstExpr? step = null;
             if (Match(TokenType.KwStep))
-            {
-                var stepTok = Expect(TokenType.IntegerLiteral, "as LOOP step (must be an integer literal)");
-                step = (int)stepTok.NumericValue;
-                if (step == 0)
-                    throw new ParseError("LOOP STEP cannot be 0 (would never terminate)", stepTok.Line, stepTok.Column);
-            }
-
-            int from = (int)fromTok.NumericValue;
-            int to = (int)toTok.NumericValue;
-            if ((step > 0 && from > to) || (step < 0 && from < to))
-                throw new ParseError(
-                    $"LOOP bounds {from} TO {to} STEP {step} would never execute",
-                    kw.Line, kw.Column);
+                step = ParseConstExpr();
 
             // The loop variable is a compile-time-only binding, resolved
             // during unrolling — it is a separate namespace from VAR, not
             // added to _declaredVars. It IS pushed onto _activeLoopVars so
             // const_expr inside this LOOP's body (including nested
             // LOOPs/PHASEs) can reference it, e.g. `angle: i * 30deg`.
-            if (loopVarTok.Lexeme == CopyIndexName)
-                throw new ParseError(
-                    $"'{CopyIndexName}' is reserved (it is the per-copy counter inside SPAWN color)",
-                    loopVarTok.Line, loopVarTok.Column);
+            RejectReservedName(loopVarTok, "LOOP variable");
             if (_declaredVars.Contains(loopVarTok.Lexeme))
                 throw new ParseError(
                     $"LOOP variable '{loopVarTok.Lexeme}' collides with an existing VAR of the same name",

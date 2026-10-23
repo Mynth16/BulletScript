@@ -17,6 +17,7 @@ SPAWN_PATTERN fan {
 			count: fan_n;
 			spread: fan_spread;
 			delay: i * volley_gap;
+			turn: 60deg;
 		};
 
 		SPAWN orb AT bottom_left {

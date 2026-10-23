@@ -20,6 +20,7 @@ public partial class BulletScriptRunner : Node2D
     // The language has no pixel units. These are the decisions made here; pin them
     // in the BulletScript spec so the JSON and hand-coded C# treatments match exactly.
     [Export] public float SpeedScale = 60f;   // speed 3.5 => 3.5 px per 60 Hz tick = 210 px/s
+                                              // accel is in speed units per second: accel 1 => +60 px/s every second
     [Export] public float SizeScale = 1f;     // size 4 => 4 px radius
 
     struct Ev
@@ -29,6 +30,11 @@ public partial class BulletScriptRunner : Node2D
         public float X, Y;
         public float Angle;    // radians, Godot convention: 0 = right, +90 deg = down
         public Color Tint;     // resolved per bullet at compile time
+        public float Speed;    // speed units; each bullet's own (SPAWN speed or BULLET speed)
+        public float Accel;    // speed units per second
+        public float Limit;
+        public bool HasLimit;
+        public float Turn;     // radians per second
     }
 
     Ev[] _events = Array.Empty<Ev>();
@@ -84,7 +90,7 @@ public partial class BulletScriptRunner : Node2D
                 GD.PushWarning($"BulletScript: bullet '{b.Name}' has no lifetime, so it is removed right after spawning. Add `lifetime: 6s;` to its BULLET block.");
 
             var pool = new BulletPool(PoolCapacity, LoadSprite(b.Sprite),
-                (float)b.Size * SizeScale, (float)b.Speed * SpeedScale, (float)b.LifetimeMs / 1000f);
+                (float)b.Size * SizeScale, SpeedScale, (float)b.LifetimeMs / 1000f);
             AddChild(pool.Node);
             poolIndex[b.Id] = pools.Count;
             pools.Add(pool);
@@ -113,6 +119,11 @@ public partial class BulletScriptRunner : Node2D
                     ((ins.Rgb >> 16) & 0xFF) / 255f,
                     ((ins.Rgb >> 8) & 0xFF) / 255f,
                     (ins.Rgb & 0xFF) / 255f),
+                Speed = (float)ins.Speed,
+                Accel = (float)ins.Accel,
+                Limit = (float)(ins.SpeedLimit ?? 0.0),
+                HasLimit = ins.SpeedLimit.HasValue,
+                Turn = Mathf.DegToRad((float)ins.TurnDegreesPerSec),
             });
         }
         _events = events.OrderBy(ev => ev.T).ToArray();   // stable sort
@@ -175,7 +186,8 @@ public partial class BulletScriptRunner : Node2D
         while (_pc < _events.Length && _events[_pc].T <= _clock)
         {
             ref Ev e = ref _events[_pc++];
-            _pools[e.Pool].Spawn(e.X, e.Y, e.Angle, (float)(_clock - e.T), e.Tint);
+            _pools[e.Pool].Spawn(e.X, e.Y, e.Angle, (float)(_clock - e.T), e.Tint,
+                                 e.Speed, e.Accel, e.Limit, e.HasLimit, e.Turn);
         }
 
         // 3) render

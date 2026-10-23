@@ -4,13 +4,13 @@
 
 [node name="Main" type="Node2D" unique_id=1313284647]
 script = ExtResource("1_o5qli")
-SourcePath = "res://patterns/checker.bs"
-PatternName = "mixed_colors"
+SourcePath = "res://patterns/motion.bs"
+PatternName = "mixed"
 AutoStart = false
 
 [node name="ColorRect" type="ColorRect" parent="." unique_id=2116560580]
-offset_left = -574.0
+offset_left = -638.0
 offset_top = -391.0
-offset_right = 1147.0
+offset_right = 1083.0
 offset_bottom = 642.0
 color = Color(0, 0, 0, 1)

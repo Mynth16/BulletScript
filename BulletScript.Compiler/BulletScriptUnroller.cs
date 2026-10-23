@@ -61,7 +61,8 @@ namespace BulletScript.Compiler
     /// One flattened spawn instruction. This is the only thing the C#
     /// runtime executor ever reads — it just walks the array in order and
     /// fires each spawn at DelayMs, with no interpretation of BulletScript
-    /// source at runtime.
+    /// source at runtime. Every per-bullet value (color, speed, motion) is
+    /// already resolved here.
     /// </summary>
     public readonly struct Instruction
     {
@@ -75,17 +76,33 @@ namespace BulletScript.Compiler
         [JsonIgnore] public uint Rgb { get; }
         public string Color => $"#{Rgb:X6}";
 
-        public Instruction(int bulletId, int spawnPointId, double angleDegrees, double delayMs, uint rgb = 0xFFFFFF)
+        // Starting speed in speed units (the SPAWN's speed, else the BULLET's).
+        public double Speed { get; }
+        // Speed change per second, in speed units. 0 = constant speed.
+        public double Accel { get; }
+        // Speed that Accel stops at; null = no limit (deceleration still stops at 0).
+        public double? SpeedLimit { get; }
+        // Heading change per second, in degrees. 0 = straight line.
+        public double TurnDegreesPerSec { get; }
+
+        public Instruction(
+            int bulletId, int spawnPointId, double angleDegrees, double delayMs,
+            uint rgb, double speed, double accel, double? speedLimit, double turnDegreesPerSec)
         {
             BulletId = bulletId;
             SpawnPointId = spawnPointId;
             AngleDegrees = angleDegrees;
             DelayMs = delayMs;
             Rgb = rgb;
+            Speed = speed;
+            Accel = accel;
+            SpeedLimit = speedLimit;
+            TurnDegreesPerSec = turnDegreesPerSec;
         }
 
         public override string ToString() =>
-            $"Instruction(bullet={BulletId}, point={SpawnPointId}, angle={AngleDegrees:F2}deg, delay={DelayMs:F1}ms, color={Color})";
+            $"Instruction(bullet={BulletId}, point={SpawnPointId}, angle={AngleDegrees:F2}deg, delay={DelayMs:F1}ms, " +
+            $"color={Color}, speed={Speed}, accel={Accel}, limit={(SpeedLimit?.ToString() ?? "none")}, turn={TurnDegreesPerSec}deg/s)";
     }
 
     public class CompiledProgram
@@ -93,8 +110,38 @@ namespace BulletScript.Compiler
         public List<CompiledBullet> Bullets { get; } = new();
         public List<CompiledSpawnPoint> SpawnPoints { get; } = new();
 
-        // Pattern name -> its flat, time-ordered instruction list.
+        // Pattern name -> its flat, time-ordered instruction list. Only patterns
+        // without parameters appear here; parameterized ones are templates for CALL.
         public Dictionary<string, List<Instruction>> Patterns { get; } = new();
+    }
+
+    /// <summary>
+    /// SplitMix64. Implemented here (rather than System.Random) so a seed gives
+    /// the same numbers on every machine and runtime version.
+    /// </summary>
+    public sealed class SeededRandom
+    {
+        private ulong _state;
+
+        public SeededRandom(long seed)
+        {
+            _state = unchecked((ulong)seed);
+        }
+
+        private ulong NextUInt64()
+        {
+            unchecked
+            {
+                _state += 0x9E3779B97F4A7C15UL;
+                ulong z = _state;
+                z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
+                z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
+                return z ^ (z >> 31);
+            }
+        }
+
+        /// <summary>Uniform in [0, 1).</summary>
+        public double NextDouble() => (NextUInt64() >> 11) * (1.0 / 9007199254740992.0);
     }
 
     /// <summary>
@@ -106,14 +153,21 @@ namespace BulletScript.Compiler
     public class ConstEvaluator
     {
         private readonly Dictionary<string, EvalResult> _globalVars;
-        private readonly Dictionary<string, int> _loopBindings;
+        // LOOP variables, pattern parameters and the per-copy `index`.
+        private readonly Dictionary<string, EvalResult> _bindings;
         private readonly double _framesPerSecond;
+        private readonly SeededRandom _rng;
 
-        public ConstEvaluator(Dictionary<string, EvalResult> globalVars, Dictionary<string, int> loopBindings, double framesPerSecond)
+        public ConstEvaluator(
+            Dictionary<string, EvalResult> globalVars,
+            Dictionary<string, EvalResult> bindings,
+            double framesPerSecond,
+            SeededRandom rng)
         {
             _globalVars = globalVars;
-            _loopBindings = loopBindings;
+            _bindings = bindings;
             _framesPerSecond = framesPerSecond;
+            _rng = rng;
         }
 
         public EvalResult Evaluate(ConstExpr expr) => expr switch
@@ -124,6 +178,7 @@ namespace BulletScript.Compiler
             UnaryMinusExpr u => Negate(Evaluate(u.Operand), u),
             ColorLiteral c => new EvalResult(c.Rgb, UnitCategory.Color),
             IndexExpr ix => EvalIndex(ix),
+            RandExpr r => EvalRand(r),
             _ => throw new CompileError($"Unhandled expression node {expr.GetType().Name}", expr.Line, expr.Column)
         };
 
@@ -140,12 +195,11 @@ namespace BulletScript.Compiler
 
         private EvalResult EvalVarRef(VarRef v)
         {
-            // LOOP variables shadow nothing (parser already forbids name
-            // collisions with VAR), so checking loop bindings first is safe
-            // and just avoids an unnecessary dictionary miss on the common
-            // case of referencing a LOOP index.
-            if (_loopBindings.TryGetValue(v.Name, out int loopValue))
-                return new EvalResult(loopValue, UnitCategory.None);
+            // Bindings (LOOP variables, pattern parameters, `index`) never share a
+            // name with a VAR — the parser forbids it — so checking them first is
+            // safe and avoids a dictionary miss on the common case.
+            if (_bindings.TryGetValue(v.Name, out var bound))
+                return bound;
 
             if (_globalVars.TryGetValue(v.Name, out var globalValue))
                 return globalValue;
@@ -187,6 +241,40 @@ namespace BulletScript.Compiler
                     line, column);
 
             return i;
+        }
+
+        // rand(lo, hi) / randi(lo, hi). The result takes the unit of whichever bound
+        // has one, so rand(0deg, 360deg) is an angle and rand(1, 3) a plain number.
+        private EvalResult EvalRand(RandExpr r)
+        {
+            string name = r.Integer ? "randi" : "rand";
+            var lo = Evaluate(r.Lo);
+            var hi = Evaluate(r.Hi);
+
+            if (lo.Category == UnitCategory.Color || hi.Category == UnitCategory.Color)
+                throw new CompileError($"{name}() cannot take colors", r.Line, r.Column);
+
+            UnitCategory category = lo.Category != UnitCategory.None ? lo.Category : hi.Category;
+            if (lo.Category != UnitCategory.None && hi.Category != UnitCategory.None && lo.Category != hi.Category)
+                throw new CompileError(
+                    $"{name}() bounds must have the same unit (got {lo.Category.ToString().ToLowerInvariant()} and {hi.Category.ToString().ToLowerInvariant()})",
+                    r.Line, r.Column);
+
+            if (hi.Value < lo.Value)
+                throw new CompileError($"{name}(lo, hi) needs lo <= hi (got {lo.Value} and {hi.Value})", r.Line, r.Column);
+
+            if (!r.Integer)
+                return new EvalResult(lo.Value + _rng.NextDouble() * (hi.Value - lo.Value), category);
+
+            long a = (long)Math.Round(lo.Value);
+            long b = (long)Math.Round(hi.Value);
+            if (Math.Abs(lo.Value - a) > 1e-6 || Math.Abs(hi.Value - b) > 1e-6)
+                throw new CompileError($"randi() bounds must be whole numbers (got {lo.Value} and {hi.Value})", r.Line, r.Column);
+
+            long span = b - a + 1;
+            long picked = a + (long)Math.Floor(_rng.NextDouble() * span);
+            if (picked > b) picked = b;
+            return new EvalResult(picked, category);
         }
 
         private EvalResult EvalBinary(BinaryOpExpr b)
@@ -277,15 +365,28 @@ namespace BulletScript.Compiler
     /// </summary>
     public class Compiler
     {
+        // Guards against an accidental explosion (e.g. nested loops with huge bounds)
+        // freezing the editor or the build.
+        private const int MaxLoopIterations = 100_000;
+        private const int MaxInstructions = 2_000_000;
+        private const string CopyIndexName = "index";
+
         private readonly double _framesPerSecond;
         private readonly Dictionary<string, EvalResult> _globalVars = new();
         private readonly Dictionary<string, int> _bulletIds = new();
         private readonly Dictionary<int, uint> _bulletColors = new();
+        private readonly Dictionary<int, double> _bulletSpeeds = new();
         private readonly Dictionary<string, int> _spawnPointIds = new();
+        private readonly Dictionary<string, SpawnPatternDefNode> _patternDefs = new();
+
+        private long _seed;
+        private SeededRandom _rng;
 
         public Compiler(double framesPerSecond = 60.0)
         {
             _framesPerSecond = framesPerSecond;
+            _seed = 0;
+            _rng = new SeededRandom(_seed);
         }
 
         public CompiledProgram Compile(ProgramNode program)
@@ -296,6 +397,10 @@ namespace BulletScript.Compiler
             {
                 switch (decl)
                 {
+                    case SeedDeclNode sd:
+                        _seed = sd.Value;
+                        _rng = new SeededRandom(_seed);
+                        break;
                     case VarDeclNode v:
                         CompileVarDecl(v);
                         break;
@@ -306,7 +411,10 @@ namespace BulletScript.Compiler
                         result.SpawnPoints.Add(CompileSpawnPointDef(s));
                         break;
                     case SpawnPatternDefNode p:
-                        result.Patterns[p.Name] = CompileSpawnPattern(p);
+                        _patternDefs[p.Name] = p;
+                        // Patterns with parameters are templates: they only run when CALLed.
+                        if (p.Params.Count == 0)
+                            result.Patterns[p.Name] = CompileSpawnPattern(p);
                         break;
                 }
             }
@@ -314,8 +422,8 @@ namespace BulletScript.Compiler
             return result;
         }
 
-        private ConstEvaluator NewEvaluator(Dictionary<string, int>? loopBindings = null) =>
-            new(_globalVars, loopBindings ?? new Dictionary<string, int>(), _framesPerSecond);
+        private ConstEvaluator NewEvaluator(Dictionary<string, EvalResult>? bindings = null) =>
+            new(_globalVars, bindings ?? new Dictionary<string, EvalResult>(), _framesPerSecond, _rng);
 
         private void CompileVarDecl(VarDeclNode v)
         {
@@ -335,6 +443,7 @@ namespace BulletScript.Compiler
 
             uint rgb = b.Color != null ? RequireColor(eval.Evaluate(b.Color), "color", b.Color) : 0xFFFFFF;
             _bulletColors[id] = rgb;
+            _bulletSpeeds[id] = speed;
 
             return new CompiledBullet { Id = id, Name = b.Name, Speed = speed, Size = size, Sprite = b.Sprite, LifetimeMs = lifetimeMs, Rgb = rgb };
         }
@@ -353,37 +462,45 @@ namespace BulletScript.Compiler
 
         private List<Instruction> CompileSpawnPattern(SpawnPatternDefNode pattern)
         {
+            // Every entry-point pattern restarts the random stream from the seed, so a
+            // pattern compiles to the same output no matter what else is in the file.
+            _rng = new SeededRandom(_seed);
+
             var output = new List<Instruction>();
-            var loopBindings = new Dictionary<string, int>();
+            var bindings = new Dictionary<string, EvalResult>();
             double clockMs = 0.0;
-            ProcessStmts(pattern.Body, ref clockMs, loopBindings, output);
+            ProcessStmts(pattern.Body, ref clockMs, bindings, output);
             return output;
         }
 
-        private void ProcessStmts(List<PatternStmt> stmts, ref double clockMs, Dictionary<string, int> loopBindings, List<Instruction> output)
+        private void ProcessStmts(List<PatternStmt> stmts, ref double clockMs, Dictionary<string, EvalResult> bindings, List<Instruction> output)
         {
             foreach (var stmt in stmts)
             {
                 switch (stmt)
                 {
                     case SpawnStmt s:
-                        CompileSpawnStmt(s, clockMs, loopBindings, output);
+                        CompileSpawnStmt(s, clockMs, bindings, output);
                         break;
 
                     case LoopStmt l:
-                        CompileLoopStmt(l, ref clockMs, loopBindings, output);
+                        CompileLoopStmt(l, ref clockMs, bindings, output);
                         break;
 
                     case PhaseStmt p:
-                        CompilePhaseStmt(p, ref clockMs, loopBindings, output);
+                        CompilePhaseStmt(p, ref clockMs, bindings, output);
+                        break;
+
+                    case CallStmt c:
+                        CompileCallStmt(c, ref clockMs, bindings, output);
                         break;
                 }
             }
         }
 
-        private void CompileSpawnStmt(SpawnStmt s, double clockMs, Dictionary<string, int> loopBindings, List<Instruction> output)
+        private void CompileSpawnStmt(SpawnStmt s, double clockMs, Dictionary<string, EvalResult> bindings, List<Instruction> output)
         {
-            var eval = NewEvaluator(loopBindings);
+            var eval = NewEvaluator(bindings);
 
             double baseAngle = s.Angle != null ? RequireCategory(eval.Evaluate(s.Angle), UnitCategory.Angle, "angle", s.Angle) : 0.0;
             double countRaw = s.Count != null ? RequireCategory(eval.Evaluate(s.Count), UnitCategory.None, "count", s.Count) : 1.0;
@@ -403,13 +520,20 @@ namespace BulletScript.Compiler
             double step = count > 1 ? spread / count : 0.0;
             for (int i = 0; i < count; i++)
             {
+                if (output.Count >= MaxInstructions)
+                    throw new CompileError(
+                        $"Pattern produced more than {MaxInstructions} bullets; check LOOP bounds and counts",
+                        s.Line, s.Column);
+
                 double angle = NormalizeDegrees(baseAngle + i * step);
 
                 // `index` is the copy number. `color: [#FF3030, #FFFFFF][index % 2]` and
                 // `SPAWN [a, b][index % 2] AT ...` both alternate per bullet. All of it is
                 // resolved here, so nothing is left to decide at runtime.
-                loopBindings[CopyIndexName] = i;
+                bindings[CopyIndexName] = new EvalResult(i, UnitCategory.None);
 
+                // Per-copy fields are evaluated in a fixed order (bullet, color, speed,
+                // accel, speed_limit, turn) so rand()/randi() draws are reproducible.
                 int bulletId = singleBulletId;
                 if (s.BulletChoices != null)
                 {
@@ -422,9 +546,33 @@ namespace BulletScript.Compiler
                     ? RequireColor(eval.Evaluate(s.Color), "color", s.Color)
                     : _bulletColors[bulletId];
 
-                output.Add(new Instruction(bulletId, spawnPointId, angle, clockMs + localDelay, rgb));
+                // SPAWN speed overrides the chosen BULLET's speed.
+                double speed = s.Speed != null
+                    ? RequireCategory(eval.Evaluate(s.Speed), UnitCategory.None, "speed", s.Speed)
+                    : _bulletSpeeds[bulletId];
+                if (speed < 0)
+                    throw new CompileError($"SPAWN 'speed' must be >= 0 (got {speed})", s.Speed?.Line ?? s.Line, s.Speed?.Column ?? s.Column);
+
+                double accel = s.Accel != null
+                    ? RequireCategory(eval.Evaluate(s.Accel), UnitCategory.None, "accel", s.Accel)
+                    : 0.0;
+
+                double? speedLimit = null;
+                if (s.SpeedLimit != null)
+                {
+                    double limit = RequireCategory(eval.Evaluate(s.SpeedLimit), UnitCategory.None, "speed_limit", s.SpeedLimit);
+                    if (limit < 0)
+                        throw new CompileError($"SPAWN 'speed_limit' must be >= 0 (got {limit})", s.SpeedLimit.Line, s.SpeedLimit.Column);
+                    speedLimit = limit;
+                }
+
+                double turn = s.Turn != null
+                    ? RequireCategory(eval.Evaluate(s.Turn), UnitCategory.Angle, "turn", s.Turn)
+                    : 0.0;
+
+                output.Add(new Instruction(bulletId, spawnPointId, angle, clockMs + localDelay, rgb, speed, accel, speedLimit, turn));
             }
-            loopBindings.Remove(CopyIndexName);
+            bindings.Remove(CopyIndexName);
         }
 
         private int LookupBulletId(string name, SpawnStmt s)
@@ -434,26 +582,61 @@ namespace BulletScript.Compiler
             return id;
         }
 
-        private void CompileLoopStmt(LoopStmt l, ref double clockMs, Dictionary<string, int> loopBindings, List<Instruction> output)
+        private void CompileLoopStmt(LoopStmt l, ref double clockMs, Dictionary<string, EvalResult> bindings, List<Instruction> output)
         {
-            for (int i = l.From; l.Step > 0 ? i <= l.To : i >= l.To; i += l.Step)
+            var eval = NewEvaluator(bindings);
+            int first = RequireWholeNumber(eval.Evaluate(l.From), "LOOP start", l.From);
+            int last = RequireWholeNumber(eval.Evaluate(l.To), "LOOP end", l.To);
+            int stride = l.Step != null ? RequireWholeNumber(eval.Evaluate(l.Step), "LOOP STEP", l.Step) : 1;
+
+            if (stride == 0)
+                throw new CompileError("LOOP STEP cannot be 0 (would never terminate)", l.Step!.Line, l.Step.Column);
+            if ((stride > 0 && first > last) || (stride < 0 && first < last))
+                throw new CompileError($"LOOP bounds {first} TO {last} STEP {stride} would never execute", l.Line, l.Column);
+
+            long iterations = ((long)last - first) / stride + 1;
+            if (iterations > MaxLoopIterations)
+                throw new CompileError($"LOOP would run {iterations} times (limit is {MaxLoopIterations})", l.Line, l.Column);
+
+            for (int i = first; stride > 0 ? i <= last : i >= last; i += stride)
             {
-                loopBindings[l.LoopVar] = i;
-                ProcessStmts(l.Body, ref clockMs, loopBindings, output);
+                bindings[l.LoopVar] = new EvalResult(i, UnitCategory.None);
+                ProcessStmts(l.Body, ref clockMs, bindings, output);
             }
-            loopBindings.Remove(l.LoopVar);
+            bindings.Remove(l.LoopVar);
         }
 
-        private void CompilePhaseStmt(PhaseStmt p, ref double clockMs, Dictionary<string, int> loopBindings, List<Instruction> output)
+        private void CompilePhaseStmt(PhaseStmt p, ref double clockMs, Dictionary<string, EvalResult> bindings, List<Instruction> output)
         {
             if (p.AfterDelay != null)
             {
-                var eval = NewEvaluator(loopBindings);
+                var eval = NewEvaluator(bindings);
                 double afterMs = RequireCategory(eval.Evaluate(p.AfterDelay), UnitCategory.Duration, "PHASE AFTER", p.AfterDelay);
                 clockMs += afterMs; // cumulative — see grammar spec §4 delay accumulation model
             }
 
-            ProcessStmts(p.Body, ref clockMs, loopBindings, output);
+            ProcessStmts(p.Body, ref clockMs, bindings, output);
+        }
+
+        // CALL expands the other pattern's body in place. The arguments are evaluated
+        // in the caller's scope; the body then runs in a fresh scope that holds only its
+        // own parameters, so it cannot see the caller's LOOP variables. The clock is
+        // shared, so a PHASE inside the called pattern advances the caller's time too.
+        private void CompileCallStmt(CallStmt c, ref double clockMs, Dictionary<string, EvalResult> bindings, List<Instruction> output)
+        {
+            if (!_patternDefs.TryGetValue(c.PatternName, out var def))
+                throw new CompileError($"Internal error: pattern '{c.PatternName}' not registered (should have been caught by the parser)", c.Line, c.Column);
+            if (c.Args.Count != def.Params.Count)
+                throw new CompileError(
+                    $"Pattern '{c.PatternName}' takes {def.Params.Count} argument(s), got {c.Args.Count}",
+                    c.Line, c.Column);
+
+            var eval = NewEvaluator(bindings);
+            var calleeBindings = new Dictionary<string, EvalResult>();
+            for (int i = 0; i < def.Params.Count; i++)
+                calleeBindings[def.Params[i]] = eval.Evaluate(c.Args[i]);
+
+            ProcessStmts(def.Body, ref clockMs, calleeBindings, output);
         }
 
         /// <summary>
@@ -473,7 +656,19 @@ namespace BulletScript.Compiler
                 sourceForLocation.Line, sourceForLocation.Column);
         }
 
-        private const string CopyIndexName = "index";
+        // LOOP bounds: a plain whole number, no units.
+        private static int RequireWholeNumber(EvalResult r, string what, ConstExpr sourceForLocation)
+        {
+            if (r.Category != UnitCategory.None)
+                throw new CompileError(
+                    $"{what} must be a plain whole number, got a {r.Category.ToString().ToLowerInvariant()} value",
+                    sourceForLocation.Line, sourceForLocation.Column);
+
+            int n = (int)Math.Round(r.Value);
+            if (Math.Abs(r.Value - n) > 1e-6)
+                throw new CompileError($"{what} must be a whole number (got {r.Value})", sourceForLocation.Line, sourceForLocation.Column);
+            return n;
+        }
 
         // Unlike RequireCategory, a plain number is NOT accepted here: `color: 5` is an error.
         private static uint RequireColor(EvalResult r, string fieldName, ConstExpr sourceForLocation)

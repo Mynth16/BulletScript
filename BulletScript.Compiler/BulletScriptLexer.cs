@@ -30,6 +30,8 @@ namespace BulletScript.Compiler
         KwSpawn,
         KwAt,
         KwAfter,
+        KwCall,
+        KwSeed,
 
         // Operators / punctuation
         Plus, Minus, Star, Slash, Percent,
@@ -130,6 +132,8 @@ namespace BulletScript.Compiler
             ["SPAWN"] = TokenType.KwSpawn,
             ["AT"] = TokenType.KwAt,
             ["AFTER"] = TokenType.KwAfter,
+            ["CALL"] = TokenType.KwCall,
+            ["SEED"] = TokenType.KwSeed,
         };
 
         // Units are checked longest-first so "ms" isn't swallowed as "m" + "s".

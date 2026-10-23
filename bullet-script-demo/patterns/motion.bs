@@ -1,0 +1,226 @@
+// Demos for: per-SPAWN speed, acceleration / turning, patterns with parameters, seeded random.
+// Everything here is resolved at compile time; the Godot runtime only moves bullets.
+
+SEED 1234;   // same seed => same "random" bullets on every run and every machine
+
+BULLET orb  { speed: 2;   size: 8;  lifetime: 4s; sprite: "orb_small"; }
+BULLET star { speed: 1.5; size: 10; lifetime: 6s; sprite: "orb_small"; color: #FFD040; }
+
+SPAWN_POINT center { x: 0; y: 0; }
+
+
+// ---------- 1. Per-SPAWN speed (overrides the BULLET's speed) ----------
+
+// Four rings, each faster than the last.
+SPAWN_PATTERN speed_rings {
+	LOOP r IN 0 TO 3 {
+		SPAWN orb AT center {
+			count: 24;
+			spread: 360deg;
+			speed: 1.5 + r * 0.75;
+			delay: r * 150ms;
+		};
+	}
+}
+
+// Speed can differ per bullet inside one SPAWN: slow, fast, slow, fast...
+SPAWN_PATTERN speed_stripes {
+	SPAWN orb AT center {
+		count: 24;
+		spread: 360deg;
+		speed: [1.5, 3][index % 2];
+	};
+}
+
+
+// ---------- 2. Acceleration, speed limit, turning ----------
+// accel is in speed units per second. turn is angle per second.
+
+// Starts slow, speeds up, stops accelerating at speed 4.
+SPAWN_PATTERN accelerate {
+	SPAWN orb AT center { count: 24; spread: 360deg; speed: 0.5; accel: 2; speed_limit: 4; };
+}
+
+// Starts fast, brakes down to speed 0.5 and keeps drifting at that speed.
+SPAWN_PATTERN brake {
+	SPAWN orb AT center { count: 24; spread: 360deg; speed: 4; accel: -3; speed_limit: 0.5; };
+}
+
+// Without speed_limit, a braking bullet stops completely (it never reverses).
+SPAWN_PATTERN stop {
+	SPAWN orb AT center { count: 24; spread: 360deg; speed: 3; accel: -1.5; };
+}
+
+// Every bullet curves clockwise.
+SPAWN_PATTERN swirl {
+	SPAWN orb AT center { count: 16; spread: 360deg; speed: 2; turn: 60deg; };
+}
+
+// Neighbouring bullets curve in opposite directions.
+SPAWN_PATTERN counter_swirl {
+	SPAWN orb AT center {
+		count: 16;
+		spread: 360deg;
+		speed: 2;
+		turn: [60deg, -60deg][index % 2];
+	};
+}
+
+// Burst outward, slow down, and curve at the same time.
+SPAWN_PATTERN bloom {
+	SPAWN star AT center {
+		count: 12;
+		spread: 360deg;
+		speed: 3;
+		accel: -2;
+		speed_limit: 0.8;
+		turn: 40deg;
+	};
+}
+
+
+// ---------- 3. Patterns with parameters ----------
+// A pattern with parameters is a template: it only runs when another pattern CALLs it.
+
+SPAWN_PATTERN ring(n, spd, tint) {
+	SPAWN orb AT center {
+		count: n;
+		spread: 360deg;
+		speed: spd;
+		color: tint;
+	};
+}
+
+// Three rings in a row, built from one template.
+SPAWN_PATTERN triple_ring {
+	CALL ring(12, 2, #FF3030);
+	PHASE second AFTER 400ms { CALL ring(18, 2.5, #FFFFFF); }
+	PHASE third AFTER 400ms { CALL ring(24, 3, #30A0FF); }
+}
+
+// Loop bounds can use parameters.
+SPAWN_PATTERN spiral_arms(arms, waves, gap) {
+	LOOP w IN 0 TO waves - 1 {
+		LOOP a IN 0 TO arms - 1 {
+			SPAWN orb AT center {
+				angle: w * 9deg + a * (360deg / arms);
+				delay: w * gap;
+			};
+		}
+	}
+}
+
+SPAWN_PATTERN galaxy {
+	CALL spiral_arms(3, 20, 60ms);
+}
+
+SPAWN_PATTERN galaxy_dense {
+	CALL spiral_arms(6, 30, 40ms);
+}
+
+
+// ---------- 4. Seeded random ----------
+// rand(lo, hi) is a decimal in [lo, hi). randi(lo, hi) is a whole number, both ends included.
+
+// A random spray. angle is evaluated once per SPAWN, so use a LOOP for a different angle each bullet.
+SPAWN_PATTERN spray {
+	LOOP i IN 0 TO 39 {
+		SPAWN orb AT center {
+			angle: rand(0deg, 360deg);
+			speed: rand(1.5, 3.5);
+			delay: i * 60ms;
+		};
+	}
+}
+
+// A ring rotated by a random amount, with a random color per bullet.
+SPAWN_PATTERN confetti {
+	LOOP i IN 1 TO 6  {
+		SPAWN orb AT center {
+			count: 30;
+			spread: 360deg;
+			angle: rand(0deg, 360deg);
+			color: [#FF3030, #FFD040, #30A0FF, #FFFFFF][randi(0, 3)];
+			delay: 0.05s * i;
+			speed: i;
+			turn: [90deg, -90deg][i % 2];
+		};
+	}
+}
+
+// A fan aimed to the right with a little random wobble on every bullet.
+SPAWN_PATTERN wobble_fan {
+	LOOP i IN 0 TO 14 {
+		SPAWN orb AT center {
+			angle: rand(-20deg, 20deg);
+			delay: i * 80ms;
+		};
+	}
+}
+
+BULLET fat_bullet_pink  { speed: 1.5;   size: 12; lifetime: 5s; sprite: "fat_bullet_pink"; }
+BULLET curvy_yellow { speed: 3.5; size: 6;  lifetime: 5s; sprite: "curvy_yellow"; }
+BULLET green {speed: 1; size: 4; lifetime: 3s; sprite: "small_bullet_green";}
+
+SPAWN_PATTERN mixed {
+	LOOP i IN 1 TO 5 {
+		SPAWN [fat_bullet_pink, curvy_yellow][i % 5 != 1] AT center {
+			count: [12, 18][i % 5 != 1];
+			spread: 360deg;
+			delay: [0s, (0.1s * i) + 1.7s][i % 5 != 1];
+		};
+	}
+	
+	LOOP i IN 0 TO 39 {
+		SPAWN green AT center {
+			angle: rand(0deg, 360deg);
+			speed: rand(1.0, 1.5);
+			delay: (i * 0.02s) + 0.3s;
+		};
+	}
+}
+
+// Bullet type AND color alternate independently on the same SPAWN.
+SPAWN_PATTERN mixed_colors {
+	SPAWN [fat_bullet_pink, curvy_yellow][index % 2] AT center {
+		count: 24;
+		spread: 360deg;
+		color: [#FF3030, #FFFFFF, #30A0FF][index % 3];
+	};
+}
+
+SPAWN_PATTERN ring2(n, spd, bullet, sprd) {
+	SPAWN [fat_bullet_pink, curvy_yellow][bullet % 2] AT center {
+		count: n;
+		spread: 1deg * sprd;
+		speed: spd;
+	};
+}
+
+SPAWN_PATTERN triple_ring2 {
+	CALL ring2(8, 2, 2, 360);
+	PHASE second AFTER 400ms { CALL ring2(12, 3, 1, 180); }
+	PHASE third AFTER 400ms { CALL ring2(24, 3, 1, -180); }
+}
+
+SPAWN_PATTERN sun {
+	LOOP i IN 1 TO 5 {
+		SPAWN orb AT center { 
+			count: i * 6;
+			spread: 360deg;
+			delay: i * 200ms;
+		};
+	}
+}
+
+SPAWN_PATTERN pulses {
+	LOOP n IN 0 TO 5 {
+		SPAWN orb AT center {
+			count: 24;
+			spread: 360deg;
+			angle: n * 7.5deg;
+			delay: n * 400ms;
+			color: [#FF3030, #FFFFFF][n % 2];
+		};
+	}
+}
