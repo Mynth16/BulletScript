@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 using BulletScript.Compiler.Ast;
 
 namespace BulletScript.Compiler
 {
-    public enum UnitCategory { None, Angle, Duration }
+    // Color values carry their packed 0xRRGGBB in EvalResult.Value.
+    public enum UnitCategory { None, Angle, Duration, Color }
 
     public readonly struct EvalResult
     {
@@ -41,6 +43,10 @@ namespace BulletScript.Compiler
         public double Size { get; init; }
         public string? Sprite { get; init; }
         public double LifetimeMs { get; init; }
+
+        // Default tint (packed 0xRRGGBB); white when the BULLET has no color.
+        [JsonIgnore] public uint Rgb { get; init; } = 0xFFFFFF;
+        public string Color => $"#{Rgb:X6}";
     }
 
     public class CompiledSpawnPoint
@@ -64,16 +70,22 @@ namespace BulletScript.Compiler
         public double AngleDegrees { get; }
         public double DelayMs { get; }
 
-        public Instruction(int bulletId, int spawnPointId, double angleDegrees, double delayMs)
+        // Final tint for this one bullet (packed 0xRRGGBB), resolved at compile
+        // time: the SPAWN's color for this copy, else the BULLET's, else white.
+        [JsonIgnore] public uint Rgb { get; }
+        public string Color => $"#{Rgb:X6}";
+
+        public Instruction(int bulletId, int spawnPointId, double angleDegrees, double delayMs, uint rgb = 0xFFFFFF)
         {
             BulletId = bulletId;
             SpawnPointId = spawnPointId;
             AngleDegrees = angleDegrees;
             DelayMs = delayMs;
+            Rgb = rgb;
         }
 
         public override string ToString() =>
-            $"Instruction(bullet={BulletId}, point={SpawnPointId}, angle={AngleDegrees:F2}deg, delay={DelayMs:F1}ms)";
+            $"Instruction(bullet={BulletId}, point={SpawnPointId}, angle={AngleDegrees:F2}deg, delay={DelayMs:F1}ms, color={Color})";
     }
 
     public class CompiledProgram
@@ -109,7 +121,9 @@ namespace BulletScript.Compiler
             NumberLiteral n => EvalNumberLiteral(n),
             VarRef v => EvalVarRef(v),
             BinaryOpExpr b => EvalBinary(b),
-            UnaryMinusExpr u => Negate(Evaluate(u.Operand)),
+            UnaryMinusExpr u => Negate(Evaluate(u.Operand), u),
+            ColorLiteral c => new EvalResult(c.Rgb, UnitCategory.Color),
+            IndexExpr ix => EvalIndex(ix),
             _ => throw new CompileError($"Unhandled expression node {expr.GetType().Name}", expr.Line, expr.Column)
         };
 
@@ -143,12 +157,45 @@ namespace BulletScript.Compiler
             throw new CompileError($"Unresolved reference to '{v.Name}' during evaluation", v.Line, v.Column);
         }
 
-        private EvalResult Negate(EvalResult r) => new(-r.Value, r.Category);
+        private EvalResult Negate(EvalResult r, UnaryMinusExpr node)
+        {
+            if (r.Category == UnitCategory.Color)
+                throw new CompileError("Cannot negate a color value", node.Line, node.Column);
+            return new EvalResult(-r.Value, r.Category);
+        }
+
+        // [a, b, c][n] -- picks one item at compile time; only the chosen item is evaluated.
+        private EvalResult EvalIndex(IndexExpr ix) =>
+            Evaluate(ix.List.Items[EvaluateListIndex(ix.Index, ix.List.Items.Count, ix.Line, ix.Column)]);
+
+        // Evaluates a list index and checks it is a whole number inside the list.
+        // Shared by value lists ([#F00, #FFF][n]) and bullet-type lists (SPAWN [a, b][n]).
+        public int EvaluateListIndex(ConstExpr indexExpr, int itemCount, int line, int column)
+        {
+            var idx = Evaluate(indexExpr);
+            if (idx.Category != UnitCategory.None)
+                throw new CompileError(
+                    $"List index must be a plain number, got a {idx.Category.ToString().ToLowerInvariant()} value",
+                    indexExpr.Line, indexExpr.Column);
+
+            int i = (int)Math.Round(idx.Value);
+            if (Math.Abs(idx.Value - i) > 1e-6)
+                throw new CompileError($"List index must be a whole number (got {idx.Value})", indexExpr.Line, indexExpr.Column);
+            if (i < 0 || i >= itemCount)
+                throw new CompileError(
+                    $"List index {i} is out of range (list has {itemCount} item(s))",
+                    line, column);
+
+            return i;
+        }
 
         private EvalResult EvalBinary(BinaryOpExpr b)
         {
             var left = Evaluate(b.Left);
             var right = Evaluate(b.Right);
+
+            if (left.Category == UnitCategory.Color || right.Category == UnitCategory.Color)
+                throw new CompileError("Colors cannot be used in arithmetic", b.Line, b.Column);
 
             UnitCategory resultCategory;
             if (left.Category == UnitCategory.None && right.Category == UnitCategory.None)
@@ -193,8 +240,18 @@ namespace BulletScript.Compiler
                 BinaryOperator.Multiply => left.Value * right.Value,
                 BinaryOperator.Divide => DivideChecked(left.Value, right.Value, b),
                 BinaryOperator.Modulo => ModuloChecked(left.Value, right.Value, b),
+                BinaryOperator.Equal => Math.Abs(left.Value - right.Value) < 1e-9 ? 1.0 : 0.0,
+                BinaryOperator.NotEqual => Math.Abs(left.Value - right.Value) < 1e-9 ? 0.0 : 1.0,
+                BinaryOperator.Less => left.Value < right.Value ? 1.0 : 0.0,
+                BinaryOperator.Greater => left.Value > right.Value ? 1.0 : 0.0,
+                BinaryOperator.LessEqual => left.Value <= right.Value ? 1.0 : 0.0,
+                BinaryOperator.GreaterEqual => left.Value >= right.Value ? 1.0 : 0.0,
                 _ => throw new CompileError($"Unhandled operator {b.Op}", b.Line, b.Column)
             };
+
+            // A comparison is a plain 1/0 regardless of the units that were compared.
+            if (b.Op >= BinaryOperator.Equal)
+                return new EvalResult(value, UnitCategory.None);
 
             return new EvalResult(value, resultCategory);
         }
@@ -223,6 +280,7 @@ namespace BulletScript.Compiler
         private readonly double _framesPerSecond;
         private readonly Dictionary<string, EvalResult> _globalVars = new();
         private readonly Dictionary<string, int> _bulletIds = new();
+        private readonly Dictionary<int, uint> _bulletColors = new();
         private readonly Dictionary<string, int> _spawnPointIds = new();
 
         public Compiler(double framesPerSecond = 60.0)
@@ -275,7 +333,10 @@ namespace BulletScript.Compiler
             double size = b.Size != null ? RequireCategory(eval.Evaluate(b.Size), UnitCategory.None, "size", b.Size) : 0.0;
             double lifetimeMs = b.Lifetime != null ? RequireCategory(eval.Evaluate(b.Lifetime), UnitCategory.Duration, "lifetime", b.Lifetime) : 0.0;
 
-            return new CompiledBullet { Id = id, Name = b.Name, Speed = speed, Size = size, Sprite = b.Sprite, LifetimeMs = lifetimeMs };
+            uint rgb = b.Color != null ? RequireColor(eval.Evaluate(b.Color), "color", b.Color) : 0xFFFFFF;
+            _bulletColors[id] = rgb;
+
+            return new CompiledBullet { Id = id, Name = b.Name, Speed = speed, Size = size, Sprite = b.Sprite, LifetimeMs = lifetimeMs, Rgb = rgb };
         }
 
         private CompiledSpawnPoint CompileSpawnPointDef(SpawnPointDefNode s)
@@ -333,8 +394,7 @@ namespace BulletScript.Compiler
             if (Math.Abs(countRaw - count) > 1e-6 || count < 1)
                 throw new CompileError($"SPAWN 'count' must evaluate to a whole number >= 1 (got {countRaw})", s.Line, s.Column);
 
-            if (!_bulletIds.TryGetValue(s.BulletName, out int bulletId))
-                throw new CompileError($"Internal error: bullet '{s.BulletName}' not registered (should have been caught by the parser)", s.Line, s.Column);
+            int singleBulletId = s.BulletChoices == null ? LookupBulletId(s.BulletName, s) : -1;
             if (!_spawnPointIds.TryGetValue(s.SpawnPointName, out int spawnPointId))
                 throw new CompileError($"Internal error: spawn point '{s.SpawnPointName}' not registered (should have been caught by the parser)", s.Line, s.Column);
 
@@ -344,8 +404,34 @@ namespace BulletScript.Compiler
             for (int i = 0; i < count; i++)
             {
                 double angle = NormalizeDegrees(baseAngle + i * step);
-                output.Add(new Instruction(bulletId, spawnPointId, angle, clockMs + localDelay));
+
+                // `index` is the copy number. `color: [#FF3030, #FFFFFF][index % 2]` and
+                // `SPAWN [a, b][index % 2] AT ...` both alternate per bullet. All of it is
+                // resolved here, so nothing is left to decide at runtime.
+                loopBindings[CopyIndexName] = i;
+
+                int bulletId = singleBulletId;
+                if (s.BulletChoices != null)
+                {
+                    int pick = eval.EvaluateListIndex(s.BulletIndex!, s.BulletChoices.Count, s.Line, s.Column);
+                    bulletId = LookupBulletId(s.BulletChoices[pick], s);
+                }
+
+                // SPAWN color overrides the chosen BULLET's own color.
+                uint rgb = s.Color != null
+                    ? RequireColor(eval.Evaluate(s.Color), "color", s.Color)
+                    : _bulletColors[bulletId];
+
+                output.Add(new Instruction(bulletId, spawnPointId, angle, clockMs + localDelay, rgb));
             }
+            loopBindings.Remove(CopyIndexName);
+        }
+
+        private int LookupBulletId(string name, SpawnStmt s)
+        {
+            if (!_bulletIds.TryGetValue(name, out int id))
+                throw new CompileError($"Internal error: bullet '{name}' not registered (should have been caught by the parser)", s.Line, s.Column);
+            return id;
         }
 
         private void CompileLoopStmt(LoopStmt l, ref double clockMs, Dictionary<string, int> loopBindings, List<Instruction> output)
@@ -384,6 +470,19 @@ namespace BulletScript.Compiler
 
             throw new CompileError(
                 $"'{fieldName}' expected a {(expected == UnitCategory.None ? "plain number" : expected.ToString().ToLowerInvariant() + " value")}, got a {r.Category.ToString().ToLowerInvariant()} value",
+                sourceForLocation.Line, sourceForLocation.Column);
+        }
+
+        private const string CopyIndexName = "index";
+
+        // Unlike RequireCategory, a plain number is NOT accepted here: `color: 5` is an error.
+        private static uint RequireColor(EvalResult r, string fieldName, ConstExpr sourceForLocation)
+        {
+            if (r.Category == UnitCategory.Color)
+                return (uint)r.Value;
+
+            throw new CompileError(
+                $"'{fieldName}' expected a color like #FF3030, got a {(r.Category == UnitCategory.None ? "plain number" : r.Category.ToString().ToLowerInvariant() + " value")}",
                 sourceForLocation.Line, sourceForLocation.Column);
         }
 

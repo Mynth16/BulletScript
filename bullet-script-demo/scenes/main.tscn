@@ -4,8 +4,8 @@
 
 [node name="Main" type="Node2D" unique_id=1313284647]
 script = ExtResource("1_o5qli")
-SourcePath = "res://patterns/fan.bs"
-PatternName = "fan"
+SourcePath = "res://patterns/checker.bs"
+PatternName = "mixed_colors"
 AutoStart = false
 
 [node name="ColorRect" type="ColorRect" parent="." unique_id=2116560580]

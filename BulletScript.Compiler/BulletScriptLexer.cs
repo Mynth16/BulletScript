@@ -13,6 +13,7 @@ namespace BulletScript.Compiler
         AngleLiteral,      // e.g. 45deg, 1.57rad
         DurationLiteral,   // e.g. 0.5s, 500ms, 30f
         StringLiteral,
+        ColorLiteral,      // e.g. #FF3030, #f30 (NumericValue holds packed 0xRRGGBB)
 
         // Keywords
         KwBullet,
@@ -33,6 +34,7 @@ namespace BulletScript.Compiler
         // Operators / punctuation
         Plus, Minus, Star, Slash, Percent,
         Equals,
+        EqEq, NotEq, Lt, Gt, LtEq, GtEq,   // comparisons: evaluate to 1 or 0 at compile time
         LParen, RParen,
         LBrace, RBrace,
         LBracket, RBracket,
@@ -206,6 +208,24 @@ namespace BulletScript.Compiler
             if (char.IsDigit(c)) return ScanNumber(startLine, startCol);
             if (char.IsLetter(c) || c == '_') return ScanIdentifierOrKeyword(startLine, startCol);
             if (c == '"') return ScanString(startLine, startCol);
+            if (c == '#') return ScanColor(startLine, startCol);
+
+            // Comparison operators (checked before the single-character '=' below).
+            if ((c == '=' || c == '!') && Peek() == '=')
+            {
+                Advance(); Advance();
+                return new Token(c == '=' ? TokenType.EqEq : TokenType.NotEq, c + "=", 0, NumericUnit.None, startLine, startCol);
+            }
+            if (c == '<' || c == '>')
+            {
+                Advance();
+                bool orEqual = Current == '=';
+                if (orEqual) Advance();
+                TokenType cmp = c == '<'
+                    ? (orEqual ? TokenType.LtEq : TokenType.Lt)
+                    : (orEqual ? TokenType.GtEq : TokenType.Gt);
+                return new Token(cmp, orEqual ? c + "=" : c.ToString(), 0, NumericUnit.None, startLine, startCol);
+            }
 
             // Single-character operators / punctuation.
             Advance();
@@ -229,6 +249,27 @@ namespace BulletScript.Compiler
                 _ => throw new LexError($"Unexpected character '{c}'", startLine, startCol)
             };
             return new Token(type, c.ToString(), 0, NumericUnit.None, startLine, startCol);
+        }
+
+        // #RGB or #RRGGBB. Packed into NumericValue as 0xRRGGBB.
+        private Token ScanColor(int startLine, int startCol)
+        {
+            Advance(); // '#'
+            var sb = new StringBuilder();
+            while (Uri.IsHexDigit(Current)) sb.Append(Advance());
+
+            if (sb.Length != 3 && sb.Length != 6)
+                throw new LexError($"Color literal must be #RGB or #RRGGBB (got '#{sb}')", startLine, startCol);
+
+            if (char.IsLetterOrDigit(Current) || Current == '_')
+                throw new LexError($"Invalid character '{Current}' in color literal '#{sb}'", startLine, startCol);
+
+            string hex = sb.ToString();
+            if (hex.Length == 3)
+                hex = $"{hex[0]}{hex[0]}{hex[1]}{hex[1]}{hex[2]}{hex[2]}";
+
+            uint rgb = Convert.ToUInt32(hex, 16);
+            return new Token(TokenType.ColorLiteral, "#" + sb, rgb, NumericUnit.None, startLine, startCol);
         }
 
         private Token ScanNumber(int startLine, int startCol)

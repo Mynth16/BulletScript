@@ -1,0 +1,96 @@
+// Alternating colors. `index` is the bullet's copy number inside one SPAWN
+// (0, 1, 2, ...), so index % 2 picks red for even bullets and white for odd.
+// This is resolved at compile time: the compiled output just stores a color
+// per bullet, there is no conditional at runtime.
+
+BULLET orb {
+	speed: 2.5;
+	size: 8;
+	lifetime: 5s;
+	sprite: "orb_small";
+}
+
+SPAWN_POINT center { x: 0; y: 0; }
+
+// One ring of 16: red, white, red, white, ...
+SPAWN_PATTERN ring {
+	SPAWN orb AT center {
+		count: 16;
+		spread: 360deg;
+		color: [#FF3030, #FFFFFF][index % 2];
+	};
+}
+
+// Pulses where each whole pulse alternates, using the LOOP variable instead.
+SPAWN_PATTERN pulses {
+	LOOP n IN 0 TO 5 {
+		SPAWN orb AT center {
+			count: 24;
+			spread: 360deg;
+			angle: n * 7.5deg;
+			delay: n * 400ms;
+			color: [#FF3030, #FFFFFF][n % 2];
+		};
+	}
+}
+
+// Both at once: bullets alternate inside a pulse, and the pattern flips each pulse.
+SPAWN_PATTERN checker {
+	LOOP n IN 0 TO 5 {
+		SPAWN orb AT center {
+			count: 24;
+			spread: 360deg;
+			angle: n * 7.5deg;
+			delay: n * 400ms;
+			color: [#FF3030, #FFFFFF][(index + n) % 2];
+		};
+	}
+}
+
+// Two different BULLET types alternating (different sprite/size/speed each).
+// Put big_star.png and small_dot.png in res://sprites/, or the glowing circle is used.
+BULLET fat_bullet_pink  { speed: 2;   size: 12; lifetime: 5s; sprite: "fat_bullet_pink";  color: #FFD040; }
+BULLET curvy_yellow { speed: 3.5; size: 6;  lifetime: 5s; sprite: "curvy_yellow"; }
+
+SPAWN_PATTERN mixed {
+	SPAWN [fat_bullet_pink, curvy_yellow][index % 2] AT center {
+		count: 16;
+		spread: 360deg;
+	};
+}
+
+// Bullet type AND color alternate independently on the same SPAWN.
+SPAWN_PATTERN mixed_colors {
+	SPAWN [fat_bullet_pink, curvy_yellow][index % 2] AT center {
+		count: 24;
+		spread: 360deg;
+		color: [#FF3030, #FFFFFF, #30A0FF][index % 3];
+	};
+}
+
+// Arbitrary split. A comparison is 1 (true) or 0 (false), so it picks list item 0 or 1.
+
+// 14 stars then 2 dots, as two blocks: the last 2 of 16 bullets are dots.
+SPAWN_PATTERN split_blocks {
+	SPAWN [curvy_yellow, fat_bullet_pink][index >= 14] AT center {
+		count: 16;
+		spread: 360deg;
+	};
+}
+
+// 14 stars and 2 dots, spread evenly around the ring: every 8th bullet is a dot.
+SPAWN_PATTERN split_even {
+	SPAWN [curvy_yellow, fat_bullet_pink][index % 8 == 7] AT center {
+		count: 16;
+		spread: 360deg;
+	};
+}
+
+// Change the split with a VAR: only the first `dot_count` bullets are dots.
+VAR dot_count = 3;
+SPAWN_PATTERN split_var {
+	SPAWN [curvy_yellow, fat_bullet_pink][index < dot_count] AT center {
+		count: 16;
+		spread: 360deg;
+	};
+}

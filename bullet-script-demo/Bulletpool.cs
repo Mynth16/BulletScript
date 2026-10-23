@@ -10,6 +10,7 @@ public sealed class BulletPool
 
     readonly MultiMesh _mm;
     readonly float[] _x, _y, _vx, _vy, _age;
+    readonly Color[] _color;
     readonly int _capacity;
     readonly float _speed, _lifetime, _diameter;
     int _count;
@@ -27,10 +28,12 @@ public sealed class BulletPool
         _x = new float[capacity]; _y = new float[capacity];
         _vx = new float[capacity]; _vy = new float[capacity];
         _age = new float[capacity];
+        _color = new Color[capacity];
 
         _mm = new MultiMesh
         {
             TransformFormat = MultiMesh.TransformFormatEnum.Transform2D, // must be set before InstanceCount
+            UseColors = true,                                            // per-bullet tint; also before InstanceCount
             Mesh = new QuadMesh { Size = Vector2.One },                  // 1x1, scaled per bullet in Flush()
             InstanceCount = capacity,
             VisibleInstanceCount = 0,
@@ -40,7 +43,7 @@ public sealed class BulletPool
 
     // lead = how many seconds late this spawn is (clock - scheduled time), so bullets
     // spawned between physics ticks still land exactly where they should be.
-    public void Spawn(float x, float y, float angleRad, float lead)
+    public void Spawn(float x, float y, float angleRad, float lead, Color color)
     {
         if (_count >= _capacity) { Dropped++; return; }
 
@@ -50,6 +53,7 @@ public sealed class BulletPool
         _x[i] = x + _vx[i] * lead;
         _y[i] = y + _vy[i] * lead;
         _age[i] = lead;
+        _color[i] = color;
     }
 
     // Simulation only: move, age, and despawn expired bullets (swap-remove).
@@ -64,6 +68,7 @@ public sealed class BulletPool
                 _x[i] = _x[last]; _y[i] = _y[last];
                 _vx[i] = _vx[last]; _vy[i] = _vy[last];
                 _age[i] = _age[last];
+                _color[i] = _color[last];
                 continue;   // re-check the bullet that was swapped into slot i
             }
             _x[i] += _vx[i] * dt;
@@ -80,6 +85,7 @@ public sealed class BulletPool
         {
             _mm.SetInstanceTransform2D(i, new Transform2D(
                 new Vector2(d, 0), new Vector2(0, d), new Vector2(_x[i], _y[i])));
+            _mm.SetInstanceColor(i, _color[i]);
         }
         _mm.VisibleInstanceCount = _count;
     }

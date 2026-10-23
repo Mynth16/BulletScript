@@ -36,7 +36,8 @@ namespace BulletScript.Compiler.Ast
         public string Name { get; init; } = "";
     }
 
-    public enum BinaryOperator { Add, Subtract, Multiply, Divide, Modulo }
+    // The last six are comparisons: they evaluate to 1 (true) or 0 (false), as a plain number.
+    public enum BinaryOperator { Add, Subtract, Multiply, Divide, Modulo, Equal, NotEqual, Less, Greater, LessEqual, GreaterEqual }
 
     public class BinaryOpExpr : ConstExpr
     {
@@ -48,6 +49,28 @@ namespace BulletScript.Compiler.Ast
     public class UnaryMinusExpr : ConstExpr
     {
         public ConstExpr Operand { get; init; } = null!;
+    }
+
+    // A color literal such as #FF3030 or #f30. Rgb is packed 0xRRGGBB.
+    public class ColorLiteral : ConstExpr
+    {
+        public uint Rgb { get; init; }
+    }
+
+    // A list literal such as [a, b, c]. Lists are not first-class values: the
+    // parser only accepts them directly followed by an index (see IndexExpr),
+    // so they always collapse to a single item at compile time.
+    public class ListExpr : ConstExpr
+    {
+        public List<ConstExpr> Items { get; init; } = new();
+    }
+
+    // [a, b, c][i % 2] -- a compile-time selection. This is how a pattern
+    // varies a value per bullet without any runtime conditional.
+    public class IndexExpr : ConstExpr
+    {
+        public ListExpr List { get; init; } = null!;
+        public ConstExpr Index { get; init; } = null!;
     }
 
     // ---------- VAR ----------
@@ -69,6 +92,8 @@ namespace BulletScript.Compiler.Ast
         public ConstExpr? Size { get; init; }
         public string? Sprite { get; init; }
         public ConstExpr? Lifetime { get; init; }
+        // Default tint for this bullet type; a SPAWN's own color overrides it.
+        public ConstExpr? Color { get; init; }
     }
 
     // ---------- SPAWN_POINT ----------
@@ -96,12 +121,19 @@ namespace BulletScript.Compiler.Ast
 
     public class SpawnStmt : PatternStmt
     {
+        // Single bullet type: `SPAWN orb AT ...` (BulletChoices is null).
         public string BulletName { get; init; } = "";
+        // Per-copy bullet type: `SPAWN [a, b][index % 2] AT ...`. Evaluated once per
+        // copy, like Color, with `index` bound to 0..count-1.
+        public List<string>? BulletChoices { get; init; }
+        public ConstExpr? BulletIndex { get; init; }
         public string SpawnPointName { get; init; } = "";
         public ConstExpr? Angle { get; init; }
         public ConstExpr? Count { get; init; }
         public ConstExpr? Spread { get; init; }
         public ConstExpr? Delay { get; init; }
+        // Evaluated once per copy (count), with `index` bound to 0..count-1.
+        public ConstExpr? Color { get; init; }
     }
 
     public class LoopStmt : PatternStmt

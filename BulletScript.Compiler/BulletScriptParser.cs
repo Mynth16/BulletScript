@@ -40,6 +40,12 @@ namespace BulletScript.Compiler
         // each variable falls out of scope when its LOOP body finishes.
         private readonly List<string> _activeLoopVars = new();
 
+        // `index` is the per-copy counter (0..count-1) inside a SPAWN's color
+        // expression. It is only in scope while that expression is parsed, and
+        // the name is reserved so it can never collide with a VAR or LOOP var.
+        private const string CopyIndexName = "index";
+        private bool _copyIndexInScope;
+
         public Parser(List<Token> tokens)
         {
             _tokens = tokens;
@@ -103,6 +109,8 @@ namespace BulletScript.Compiler
 
             if (_declaredVars.Contains(nameTok.Lexeme))
                 throw new ParseError($"VAR '{nameTok.Lexeme}' is already declared", nameTok.Line, nameTok.Column);
+            if (nameTok.Lexeme == CopyIndexName)
+                throw new ParseError($"'{CopyIndexName}' is reserved (it is the per-copy counter inside SPAWN color)", nameTok.Line, nameTok.Column);
 
             Expect(TokenType.Equals, "after VAR name");
             var value = ParseConstExpr();
@@ -114,9 +122,33 @@ namespace BulletScript.Compiler
         }
 
         // ---------- Constant expressions ----------
-        // const_expr ::= term { ('+' | '-') term }
+        // const_expr ::= additive [ ('==' | '!=' | '<' | '>' | '<=' | '>=') additive ]
+        // A comparison yields 1 or 0 and is not chainable; use parentheses to combine.
 
         private ConstExpr ParseConstExpr()
+        {
+            var left = ParseAdditive();
+
+            BinaryOperator? cmp = Current.Type switch
+            {
+                TokenType.EqEq => BinaryOperator.Equal,
+                TokenType.NotEq => BinaryOperator.NotEqual,
+                TokenType.Lt => BinaryOperator.Less,
+                TokenType.Gt => BinaryOperator.Greater,
+                TokenType.LtEq => BinaryOperator.LessEqual,
+                TokenType.GtEq => BinaryOperator.GreaterEqual,
+                _ => null
+            };
+            if (cmp == null) return left;
+
+            var opTok = Advance();
+            var right = ParseAdditive();
+            return new BinaryOpExpr { Op = cmp.Value, Left = left, Right = right, Line = opTok.Line, Column = opTok.Column };
+        }
+
+        // additive ::= term { ('+' | '-') term }
+
+        private ConstExpr ParseAdditive()
         {
             var left = ParseTerm();
             while (Check(TokenType.Plus) || Check(TokenType.Minus))
@@ -149,14 +181,62 @@ namespace BulletScript.Compiler
             return left;
         }
 
-        // factor ::= NUMBER | ANGLE | DURATION | IDENTIFIER | '(' const_expr ')' | '-' factor
+        // factor  ::= '-' factor | primary [ '[' const_expr ']' ]
+        // primary ::= NUMBER | ANGLE | DURATION | COLOR | IDENTIFIER | '(' const_expr ')' | list
+        // list    ::= '[' const_expr { ',' const_expr } ']'   (only valid when indexed)
 
         private ConstExpr ParseFactor()
         {
             var tok = Current;
 
+            if (tok.Type == TokenType.Minus)
+            {
+                Advance();
+                var operand = ParseFactor();
+                return new UnaryMinusExpr { Operand = operand, Line = tok.Line, Column = tok.Column };
+            }
+
+            var primary = ParsePrimary();
+
+            if (Check(TokenType.LBracket))
+            {
+                var bracket = Advance();
+                if (primary is not ListExpr list)
+                    throw new ParseError("Only a list literal like [a, b] can be indexed", bracket.Line, bracket.Column);
+
+                var index = ParseConstExpr();
+                Expect(TokenType.RBracket, "to close list index");
+                return new IndexExpr { List = list, Index = index, Line = bracket.Line, Column = bracket.Column };
+            }
+
+            if (primary is ListExpr bare)
+                throw new ParseError(
+                    "A list must be indexed immediately, e.g. [a, b][i % 2]",
+                    bare.Line, bare.Column);
+
+            return primary;
+        }
+
+        private ConstExpr ParsePrimary()
+        {
+            var tok = Current;
+
             switch (tok.Type)
             {
+                case TokenType.ColorLiteral:
+                    Advance();
+                    return new ColorLiteral { Rgb = (uint)tok.NumericValue, Line = tok.Line, Column = tok.Column };
+
+                case TokenType.LBracket:
+                {
+                    Advance();
+                    var items = new List<ConstExpr> { ParseConstExpr() };
+                    while (Match(TokenType.Comma))
+                        items.Add(ParseConstExpr());
+                    Expect(TokenType.RBracket, "to close list literal");
+                    return new ListExpr { Items = items, Line = tok.Line, Column = tok.Column };
+                }
+
                 case TokenType.IntegerLiteral:
                 case TokenType.FloatLiteral:
                 case TokenType.AngleLiteral:
@@ -166,7 +246,8 @@ namespace BulletScript.Compiler
 
                 case TokenType.Identifier:
                     Advance();
-                    if (!_declaredVars.Contains(tok.Lexeme) && !_activeLoopVars.Contains(tok.Lexeme))
+                    bool isCopyIndex = _copyIndexInScope && tok.Lexeme == CopyIndexName;
+                    if (!isCopyIndex && !_declaredVars.Contains(tok.Lexeme) && !_activeLoopVars.Contains(tok.Lexeme))
                         throw new ParseError(
                             $"Reference to undeclared VAR or LOOP variable '{tok.Lexeme}' (must be declared/bound before use)",
                             tok.Line, tok.Column);
@@ -202,7 +283,7 @@ namespace BulletScript.Compiler
 
             Expect(TokenType.LBrace, "to open BULLET body");
 
-            ConstExpr? speed = null, size = null, lifetime = null;
+            ConstExpr? speed = null, size = null, lifetime = null, color = null;
             string? sprite = null;
 
             while (!Check(TokenType.RBrace))
@@ -223,6 +304,9 @@ namespace BulletScript.Compiler
                         break;
                     case "lifetime":
                         lifetime = ParseConstExpr();
+                        break;
+                    case "color":
+                        color = ParseConstExpr();
                         break;
                     case "damage":
                         throw new ParseError(
@@ -245,6 +329,7 @@ namespace BulletScript.Compiler
                 Size = size,
                 Sprite = sprite,
                 Lifetime = lifetime,
+                Color = color,
                 Line = kw.Line,
                 Column = kw.Column
             };
@@ -327,15 +412,47 @@ namespace BulletScript.Compiler
             };
         }
 
-        // spawn_stmt ::= 'SPAWN' IDENTIFIER 'AT' IDENTIFIER '{' { spawn_prop } '}' ';'
+        // spawn_stmt   ::= 'SPAWN' bullet_ref 'AT' IDENTIFIER '{' { spawn_prop } '}' ';'
+        // bullet_ref   ::= IDENTIFIER | '[' IDENTIFIER { ',' IDENTIFIER } ']' '[' const_expr ']'
+        //                  (in the indexed form, `index` is the copy number 0..count-1)
 
         private SpawnStmt ParseSpawnStmt()
         {
             var kw = Expect(TokenType.KwSpawn, "to start a SPAWN statement");
-            var bulletTok = Expect(TokenType.Identifier, "as bullet type after SPAWN");
 
-            if (!_declaredBullets.Contains(bulletTok.Lexeme))
-                throw new ParseError($"Reference to undeclared BULLET '{bulletTok.Lexeme}'", bulletTok.Line, bulletTok.Column);
+            string bulletName = "";
+            List<string>? bulletChoices = null;
+            ConstExpr? bulletIndex = null;
+
+            if (Check(TokenType.LBracket))
+            {
+                Advance();
+                bulletChoices = new List<string>();
+                do
+                {
+                    var choiceTok = Expect(TokenType.Identifier, "as a bullet type in the list");
+                    if (!_declaredBullets.Contains(choiceTok.Lexeme))
+                        throw new ParseError($"Reference to undeclared BULLET '{choiceTok.Lexeme}'", choiceTok.Line, choiceTok.Column);
+                    bulletChoices.Add(choiceTok.Lexeme);
+                } while (Match(TokenType.Comma));
+
+                Expect(TokenType.RBracket, "to close the bullet list");
+                Expect(TokenType.LBracket, "to index the bullet list, e.g. SPAWN [a, b][index % 2] AT ...");
+
+                _copyIndexInScope = true;
+                try { bulletIndex = ParseConstExpr(); }
+                finally { _copyIndexInScope = false; }
+
+                Expect(TokenType.RBracket, "to close the bullet list index");
+            }
+            else
+            {
+                var bulletTok = Expect(TokenType.Identifier, "as bullet type after SPAWN");
+
+                if (!_declaredBullets.Contains(bulletTok.Lexeme))
+                    throw new ParseError($"Reference to undeclared BULLET '{bulletTok.Lexeme}'", bulletTok.Line, bulletTok.Column);
+                bulletName = bulletTok.Lexeme;
+            }
 
             Expect(TokenType.KwAt, "after bullet type in SPAWN statement");
             var pointTok = Expect(TokenType.Identifier, "as spawn point after AT");
@@ -345,7 +462,7 @@ namespace BulletScript.Compiler
 
             Expect(TokenType.LBrace, "to open SPAWN body");
 
-            ConstExpr? angle = null, count = null, spread = null, delay = null;
+            ConstExpr? angle = null, count = null, spread = null, delay = null, color = null;
 
             while (!Check(TokenType.RBrace))
             {
@@ -358,6 +475,12 @@ namespace BulletScript.Compiler
                     case "count": count = ParseConstExpr(); break;
                     case "spread": spread = ParseConstExpr(); break;
                     case "delay": delay = ParseConstExpr(); break;
+                    case "color":
+                        // `index` (0..count-1) is only visible inside this expression.
+                        _copyIndexInScope = true;
+                        try { color = ParseConstExpr(); }
+                        finally { _copyIndexInScope = false; }
+                        break;
                     default:
                         throw new ParseError($"Unknown SPAWN property '{propTok.Lexeme}'", propTok.Line, propTok.Column);
                 }
@@ -370,12 +493,15 @@ namespace BulletScript.Compiler
 
             return new SpawnStmt
             {
-                BulletName = bulletTok.Lexeme,
+                BulletName = bulletName,
+                BulletChoices = bulletChoices,
+                BulletIndex = bulletIndex,
                 SpawnPointName = pointTok.Lexeme,
                 Angle = angle,
                 Count = count,
                 Spread = spread,
                 Delay = delay,
+                Color = color,
                 Line = kw.Line,
                 Column = kw.Column
             };
@@ -414,6 +540,10 @@ namespace BulletScript.Compiler
             // added to _declaredVars. It IS pushed onto _activeLoopVars so
             // const_expr inside this LOOP's body (including nested
             // LOOPs/PHASEs) can reference it, e.g. `angle: i * 30deg`.
+            if (loopVarTok.Lexeme == CopyIndexName)
+                throw new ParseError(
+                    $"'{CopyIndexName}' is reserved (it is the per-copy counter inside SPAWN color)",
+                    loopVarTok.Line, loopVarTok.Column);
             if (_declaredVars.Contains(loopVarTok.Lexeme))
                 throw new ParseError(
                     $"LOOP variable '{loopVarTok.Lexeme}' collides with an existing VAR of the same name",

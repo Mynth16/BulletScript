@@ -7,7 +7,7 @@ BULLET orb {
 
 SPAWN_POINT center { x: 0; y: 0; }
 
-SPAWN_PATTERN pinwheel {
+SPAWN_PATTERN windmill {
 	LOOP i IN 0 TO 3 {
 		LOOP wave IN 0 TO 18 {
 			LOOP arm IN 0 TO 3 {

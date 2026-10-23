@@ -28,6 +28,7 @@ public partial class BulletScriptRunner : Node2D
         public int Pool;
         public float X, Y;
         public float Angle;    // radians, Godot convention: 0 = right, +90 deg = down
+        public Color Tint;     // resolved per bullet at compile time
     }
 
     Ev[] _events = Array.Empty<Ev>();
@@ -108,6 +109,10 @@ public partial class BulletScriptRunner : Node2D
                 X = (float)sp.X,
                 Y = (float)sp.Y,
                 Angle = Mathf.DegToRad((float)ins.AngleDegrees),
+                Tint = new Color(
+                    ((ins.Rgb >> 16) & 0xFF) / 255f,
+                    ((ins.Rgb >> 8) & 0xFF) / 255f,
+                    (ins.Rgb & 0xFF) / 255f),
             });
         }
         _events = events.OrderBy(ev => ev.T).ToArray();   // stable sort
@@ -170,7 +175,7 @@ public partial class BulletScriptRunner : Node2D
         while (_pc < _events.Length && _events[_pc].T <= _clock)
         {
             ref Ev e = ref _events[_pc++];
-            _pools[e.Pool].Spawn(e.X, e.Y, e.Angle, (float)(_clock - e.T));
+            _pools[e.Pool].Spawn(e.X, e.Y, e.Angle, (float)(_clock - e.T), e.Tint);
         }
 
         // 3) render
