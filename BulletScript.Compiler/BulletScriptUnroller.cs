@@ -368,10 +368,11 @@ namespace BulletScript.Compiler
         // Guards against an accidental explosion (e.g. nested loops with huge bounds)
         // freezing the editor or the build.
         private const int MaxLoopIterations = 100_000;
-        private const int MaxInstructions = 2_000_000;
+        public const int DefaultMaxInstructions = 2_000_000;
         private const string CopyIndexName = "index";
 
         private readonly double _framesPerSecond;
+        private readonly int _maxInstructions;
         private readonly Dictionary<string, EvalResult> _globalVars = new();
         private readonly Dictionary<string, int> _bulletIds = new();
         private readonly Dictionary<int, uint> _bulletColors = new();
@@ -382,9 +383,10 @@ namespace BulletScript.Compiler
         private long _seed;
         private SeededRandom _rng;
 
-        public Compiler(double framesPerSecond = 60.0)
+        public Compiler(double framesPerSecond = 60.0, int maxInstructions = DefaultMaxInstructions)
         {
             _framesPerSecond = framesPerSecond;
+            _maxInstructions = maxInstructions > 0 ? maxInstructions : DefaultMaxInstructions;
             _seed = 0;
             _rng = new SeededRandom(_seed);
         }
@@ -520,9 +522,9 @@ namespace BulletScript.Compiler
             double step = count > 1 ? spread / count : 0.0;
             for (int i = 0; i < count; i++)
             {
-                if (output.Count >= MaxInstructions)
+                if (output.Count >= _maxInstructions)
                     throw new CompileError(
-                        $"Pattern produced more than {MaxInstructions} bullets; check LOOP bounds and counts",
+                        $"Pattern produced more than {_maxInstructions} bullets; check LOOP bounds and counts",
                         s.Line, s.Column);
 
                 double angle = NormalizeDegrees(baseAngle + i * step);

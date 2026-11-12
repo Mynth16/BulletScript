@@ -7,11 +7,11 @@
     /// </summary>
     public static class BulletScriptCompiler
     {
-        public static CompiledProgram CompileSource(string source, double framesPerSecond = 60.0)
+        public static CompiledProgram CompileSource(string source, double framesPerSecond = 60.0, int maxInstructions = Compiler.DefaultMaxInstructions)
         {
             var tokens = new Lexer(source).Tokenize();
             var program = new Parser(tokens).ParseProgram();
-            return new Compiler(framesPerSecond: framesPerSecond).Compile(program);
+            return new Compiler(framesPerSecond: framesPerSecond, maxInstructions: maxInstructions).Compile(program);
         }
     }
 }

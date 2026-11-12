@@ -46,7 +46,8 @@ public partial class BulletScriptRunner : Node2D
     int _pc;
     double _clock;
     bool _running;
-    const string SyncFile = "res://.bulletscript_sync";
+    const string SyncFile = "user://bulletscript_sync";
+    string _syncSource;   // buffer pushed by the editor (null = read SourcePath from disk)
     ulong _lastSync;
     double _syncPoll;
 
@@ -69,13 +70,18 @@ public partial class BulletScriptRunner : Node2D
         if (t == _lastSync) return false;
         _lastSync = t;
 
-        string first = (Godot.FileAccess.GetFileAsString(SyncFile).Split('\n')[0] ?? "").Trim();
-        return first == SourcePath;
+        string all = Godot.FileAccess.GetFileAsString(SyncFile);
+        int nl = all.IndexOf('\n');
+        string first = (nl < 0 ? all : all.Substring(0, nl)).Trim();
+        if (first != SourcePath) return false;
+        _syncSource = nl < 0 ? null : all.Substring(nl + 1);
+        return true;
     }
 
     bool Load()
     {
-        string source = Godot.FileAccess.GetFileAsString(SourcePath);
+        string source = _syncSource ?? Godot.FileAccess.GetFileAsString(SourcePath);
+        _syncSource = null;
         if (string.IsNullOrEmpty(source))
         {
             GD.PushError($"BulletScript: could not read '{SourcePath}'");
@@ -102,7 +108,7 @@ public partial class BulletScriptRunner : Node2D
 
         // Only now (compile succeeded) throw away the previous run's pools,
         // so a compile error leaves the last good state on screen.
-        foreach (var old in _pools) old.Node.QueueFree();
+        foreach (var old in _pools) old.Dispose();
 
         // One pool per bullet definition.
         var poolIndex = new Dictionary<int, int>();

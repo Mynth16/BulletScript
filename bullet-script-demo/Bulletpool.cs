@@ -151,4 +151,17 @@ public sealed class BulletPool
         _count = 0;
         _mm.VisibleInstanceCount = 0;
     }
+
+    // Frees the renderer-side MultiMesh buffers right away. Without this they live until the
+    // C# GC happens to finalize the wrapper, which Godot's native memory pressure does not
+    // trigger, so rebuilding pools on every recompile leaked until the editor stalled.
+    public void Dispose()
+    {
+        if (Node == null || !GodotObject.IsInstanceValid(Node)) return;
+        Node.Multimesh = null;
+        if (Node.GetParent() is Node parent) parent.RemoveChild(Node);
+        Node.QueueFree();
+        _mm.Mesh = null;
+        _mm.Dispose();
+    }
 }

@@ -172,17 +172,23 @@ public partial class InlineWidgets : Control
     {
         string text = BsTokenScanner.FormatNumber(BsTokenScanner.FromBase(row.Base, row.Unit))
                       + BsTokenScanner.Suffix(row.Unit);
+        // ReplaceSpan emits TextChanged, which triggers EditorMain.OnTextChanged -> Refresh().
         _edit.ReplaceSpan(row.Tok.Line, row.Tok.Column, row.Length, text);
         row.Length = text.Length;
-        Refresh();            // later tokens on the same line moved; refresh their columns
         TextEdited?.Invoke();
     }
 
     static void SetRowVisible(Row r, bool v)
     {
         if (r == null) return;
-        r.Slider.Visible = v;
-        if (r.UnitBox != null) r.UnitBox.Visible = v;
+        if (r.Slider.Visible != v) r.Slider.Visible = v;
+        if (r.UnitBox != null && r.UnitBox.Visible != v) r.UnitBox.Visible = v;
+    }
+
+    static void SetRectIfChanged(Control c, Vector2 pos, Vector2 size)
+    {
+        if (!c.Position.IsEqualApprox(pos)) c.Position = pos;
+        if (!c.Size.IsEqualApprox(size)) c.Size = size;
     }
 
     // Widgets are positioned every frame: that keeps them glued to their line through
@@ -215,11 +221,11 @@ public partial class InlineWidgets : Control
 
             if (r.UnitBox != null)
             {
-                r.UnitBox.Position = new Vector2(x, y);
+                var unitPos = new Vector2(x, y);
+                if (!r.UnitBox.Position.IsEqualApprox(unitPos)) r.UnitBox.Position = unitPos;
                 x += r.UnitBox.Size.X + 4;
             }
-            r.Slider.Position = new Vector2(x, y + 3);
-            r.Slider.Size = new Vector2(64, 14);
+            SetRectIfChanged(r.Slider, new Vector2(x, y + 3), new Vector2(64, 14));
             x += 64 + 10;
         }
     }

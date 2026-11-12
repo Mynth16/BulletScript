@@ -52,7 +52,7 @@ public partial class PreviewPlayer : Node2D
             return false;
         }
 
-        foreach (var old in _pools) { RemoveChild(old.Node); old.Node.QueueFree(); }
+        foreach (var old in _pools) old.Dispose();
 
         var poolIndex = new Dictionary<int, int>();
         var pools = new List<BulletPool>();

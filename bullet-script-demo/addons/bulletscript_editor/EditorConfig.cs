@@ -8,7 +8,9 @@ namespace BulletScript.EditorTools;
 // travel with the project: slider ranges (user-definable), presets, sync toggles.
 public static class EditorConfig
 {
-    const string Path = "res://addons/bulletscript_editor/editor_settings.cfg";
+    // user:// (not res://): writing under res:// makes Godot's editor rescan the filesystem, which
+    // stalled the editor whenever a setting (e.g. the Live Sync toggle) was saved.
+    const string Path = "user://bulletscript_editor_settings.cfg";
     static readonly ConfigFile Cfg = new();
     static bool _loaded;
 
@@ -47,9 +49,14 @@ public static class EditorConfig
 
     // ---- slider ranges ----
 
+    static readonly Dictionary<string, SliderRange> RangeCache = new();
+
     public static SliderRange GetRange(string key)
     {
+        // Called for every slider on every refresh; cache to avoid Variant marshalling churn.
+        if (RangeCache.TryGetValue(key, out var cached)) return cached;
         Ensure();
+        var result = GetDefaultRange(key);
         if (Cfg.HasSectionKey("ranges", key))
         {
             var parts = Cfg.GetValue("ranges", key).AsString().Split(',');
@@ -58,9 +65,10 @@ public static class EditorConfig
                 && double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var mx)
                 && double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var st)
                 && st > 0 && mx > mn)
-                return new SliderRange(mn, mx, st);
+                result = new SliderRange(mn, mx, st);
         }
-        return GetDefaultRange(key);
+        RangeCache[key] = result;
+        return result;
     }
 
     public static SliderRange GetDefaultRange(string key)
@@ -69,6 +77,7 @@ public static class EditorConfig
     public static void SetRange(string key, SliderRange r)
     {
         Ensure();
+        RangeCache.Remove(key);
         Cfg.SetValue("ranges", key, string.Create(CultureInfo.InvariantCulture, $"{r.Min},{r.Max},{r.Step}"));
         Save();
     }
@@ -76,6 +85,7 @@ public static class EditorConfig
     public static void ResetRange(string key)
     {
         Ensure();
+        RangeCache.Remove(key);
         if (Cfg.HasSectionKey("ranges", key)) Cfg.EraseSectionKey("ranges", key);
         Save();
     }

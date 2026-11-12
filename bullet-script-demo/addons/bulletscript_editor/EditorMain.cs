@@ -13,7 +13,8 @@ namespace BulletScript.EditorTools;
 [Tool]
 public partial class EditorMain : Control
 {
-    const string SyncFile = "res://.bulletscript_sync";
+    // user:// is shared by the editor and the game it launches, and is not watched by the editor.
+    const string SyncFile = "user://bulletscript_sync";
     const string PreviewPatternName = "bs_editor_preview";
     const string NewFileTemplate =
         "SEED 1234;\n\n" +
@@ -396,7 +397,8 @@ public partial class EditorMain : Control
     void NotifyGame()
     {
         using var f = Godot.FileAccess.Open(SyncFile, Godot.FileAccess.ModeFlags.Write);
-        f?.StoreString(_path + "\n" + Time.GetTicksMsec());
+        // line 1 = source path, rest = current buffer, so the game needs no write to res://.
+        f?.StoreString(_path + "\n" + _edit.Text);
     }
 
     void ExportJson(string path)
@@ -458,8 +460,8 @@ public partial class EditorMain : Control
     void OnDebounce()
     {
         Recompile();
-        if (EditorConfig.SyncOnEdit && _dirty && _lastCompileOk && !string.IsNullOrEmpty(_path))
-            Save(true);   // only push code that compiles
+        if (EditorConfig.SyncOnEdit && _lastCompileOk && !string.IsNullOrEmpty(_path))
+            NotifyGame();   // only push code that compiles; the .bs on disk is untouched until Save
     }
 
     void OnPresetChanged()
@@ -467,12 +469,12 @@ public partial class EditorMain : Control
         Recompile();
     }
 
-    bool TryCompile(string src, out CompiledProgram prog, out string msg, out int line)
+    bool TryCompile(string src, out CompiledProgram prog, out string msg, out int line, int maxInstructions = BulletScript.Compiler.Compiler.DefaultMaxInstructions)
     {
         prog = null; msg = null; line = -1;
         try
         {
-            prog = BulletScriptCompiler.CompileSource(src, Engine.PhysicsTicksPerSecond);
+            prog = BulletScriptCompiler.CompileSource(src, Engine.PhysicsTicksPerSecond, maxInstructions);
             return true;
         }
         catch (LexError e) { msg = e.Message; line = e.Line; }
@@ -510,7 +512,7 @@ public partial class EditorMain : Control
             key = PreviewPatternName;
         }
 
-        if (!TryCompile(source, out var prog, out var msg, out int line))
+        if (!TryCompile(source, out var prog, out var msg, out int line, maxInstructions: 100_000))
         {
             // Errors in the generated CALL line (past the user's text) have no line to mark.
             ShowError(msg, line <= _edit.GetLineCount() ? line : -1);
