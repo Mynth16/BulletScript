@@ -1,14 +1,3 @@
-C:\Users\catim\RiderProjects\BulletScript\BulletScript.Compiler\bin\Debug\net8.0\BulletScript.Compiler.deps.json
-C:\Users\catim\RiderProjects\BulletScript\BulletScript.Compiler\bin\Debug\net8.0\BulletScript.Compiler.dll
-C:\Users\catim\RiderProjects\BulletScript\BulletScript.Compiler\bin\Debug\net8.0\BulletScript.Compiler.pdb
-C:\Users\catim\RiderProjects\BulletScript\BulletScript.Compiler\obj\Debug\net8.0\BulletScript.Compiler.GeneratedMSBuildEditorConfig.editorconfig
-C:\Users\catim\RiderProjects\BulletScript\BulletScript.Compiler\obj\Debug\net8.0\BulletScript.Compiler.AssemblyInfoInputs.cache
-C:\Users\catim\RiderProjects\BulletScript\BulletScript.Compiler\obj\Debug\net8.0\BulletScript.Compiler.AssemblyInfo.cs
-C:\Users\catim\RiderProjects\BulletScript\BulletScript.Compiler\obj\Debug\net8.0\BulletScript.Compiler.csproj.CoreCompileInputs.cache
-C:\Users\catim\RiderProjects\BulletScript\BulletScript.Compiler\obj\Debug\net8.0\BulletScript.Compiler.dll
-C:\Users\catim\RiderProjects\BulletScript\BulletScript.Compiler\obj\Debug\net8.0\refint\BulletScript.Compiler.dll
-C:\Users\catim\RiderProjects\BulletScript\BulletScript.Compiler\obj\Debug\net8.0\BulletScript.Compiler.pdb
-C:\Users\catim\RiderProjects\BulletScript\BulletScript.Compiler\obj\Debug\net8.0\ref\BulletScript.Compiler.dll
 C:\Users\catim\Documents\Code\BulletScript\BulletScript.Compiler\bin\Debug\net8.0\BulletScript.Compiler.deps.json
 C:\Users\catim\Documents\Code\BulletScript\BulletScript.Compiler\bin\Debug\net8.0\BulletScript.Compiler.dll
 C:\Users\catim\Documents\Code\BulletScript\BulletScript.Compiler\bin\Debug\net8.0\BulletScript.Compiler.pdb
@@ -16,8 +5,8 @@ C:\Users\catim\Documents\Code\BulletScript\BulletScript.Compiler\obj\Debug\net8.
 C:\Users\catim\Documents\Code\BulletScript\BulletScript.Compiler\obj\Debug\net8.0\BulletScript.Compiler.AssemblyInfoInputs.cache
 C:\Users\catim\Documents\Code\BulletScript\BulletScript.Compiler\obj\Debug\net8.0\BulletScript.Compiler.AssemblyInfo.cs
 C:\Users\catim\Documents\Code\BulletScript\BulletScript.Compiler\obj\Debug\net8.0\BulletScript.Compiler.csproj.CoreCompileInputs.cache
+C:\Users\catim\Documents\Code\BulletScript\BulletScript.Compiler\obj\Debug\net8.0\BulletScript.Compiler.sourcelink.json
 C:\Users\catim\Documents\Code\BulletScript\BulletScript.Compiler\obj\Debug\net8.0\BulletScript.Compiler.dll
 C:\Users\catim\Documents\Code\BulletScript\BulletScript.Compiler\obj\Debug\net8.0\refint\BulletScript.Compiler.dll
 C:\Users\catim\Documents\Code\BulletScript\BulletScript.Compiler\obj\Debug\net8.0\BulletScript.Compiler.pdb
 C:\Users\catim\Documents\Code\BulletScript\BulletScript.Compiler\obj\Debug\net8.0\ref\BulletScript.Compiler.dll
-C:\Users\catim\Documents\Code\BulletScript\BulletScript.Compiler\obj\Debug\net8.0\BulletScript.Compiler.sourcelink.json

@@ -16,6 +16,9 @@ public partial class BulletScriptRunner : Node2D
     [Export] public bool AutoStart = true;
     [Export] public bool CenterOnScreen = true;   // spawn point (0,0) = middle of the viewport
     [Export] public int PoolCapacity = 5000;
+    // Live Sync from the BulletScript editor plugin: when the editor touches the sync file for
+    // this SourcePath, recompile and restart. Ignored in exported builds.
+    [Export] public bool HotReload = true;
 
     // The language has no pixel units. These are the decisions made here; pin them
     // in the BulletScript spec so the JSON and hand-coded C# treatments match exactly.
@@ -43,11 +46,31 @@ public partial class BulletScriptRunner : Node2D
     int _pc;
     double _clock;
     bool _running;
+    const string SyncFile = "res://.bulletscript_sync";
+    ulong _lastSync;
+    double _syncPoll;
 
     public override void _Ready()
     {
         if (CenterOnScreen) Position = GetViewportRect().Size / 2f;
+        _lastSync = Godot.FileAccess.GetModifiedTime(SyncFile);
         if (Load() && AutoStart) Start();
+    }
+
+    // Polls the sync token written by the editor plugin (4x per second, negligible cost).
+    bool SyncRequested(double delta)
+    {
+        if (!HotReload || !OS.IsDebugBuild()) return false;
+        _syncPoll += delta;
+        if (_syncPoll < 0.25) return false;
+        _syncPoll = 0;
+
+        ulong t = Godot.FileAccess.GetModifiedTime(SyncFile);
+        if (t == _lastSync) return false;
+        _lastSync = t;
+
+        string first = (Godot.FileAccess.GetFileAsString(SyncFile).Split('\n')[0] ?? "").Trim();
+        return first == SourcePath;
     }
 
     bool Load()
@@ -169,7 +192,7 @@ public partial class BulletScriptRunner : Node2D
     {
         // Space/Enter = recompile the .bs and restart, so you can edit, alt-tab, and re-run
         // without stopping the game. On a compile error the last good run keeps going.
-        if (Input.IsActionJustPressed("ui_accept"))
+        if (Input.IsActionJustPressed("ui_accept") || SyncRequested(delta))
         {
             if (Load()) Start();
             return;
